@@ -1,0 +1,6 @@
+flask
+twilio
+supabase
+requests
+python-dotenv
+groq
