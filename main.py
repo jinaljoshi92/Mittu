@@ -101,10 +101,10 @@ def ask_groq(prompt, max_tokens=300, temperature=0.7):
                 {
                     "role": "system",
                     "content": (
-                        "You are Mittu, a helpful and respectful "
-                        "WhatsApp assistant for small Indian businesses. "
-                        "Always reply in the EXACT same language as "
-                        "the user's message. Never mix languages unless asked."
+                        "You are Mittu, a helpful WhatsApp assistant "
+                        "for small Indian businesses. "
+                        "Follow all instructions in the user prompt exactly, "
+                        "especially the language instruction."
                     )
                 },
                 {"role": "user", "content": prompt}
@@ -284,12 +284,13 @@ def generate_reply(context, language, shop_name, shop_type="general"):
 
     try:
         return ask_groq(
-            f"""You are Mittu — a respectful WhatsApp assistant for small Indian businesses.
+            f"""⚠️ STRICT LANGUAGE RULE — YOU MUST REPLY IN {language} ONLY: {lang_instruction}
+
+You are Mittu — a respectful WhatsApp assistant for small Indian businesses.
 Shop: {shop_name} ({shop_type})
 
-LANGUAGE: {lang_instruction}
-
 Rules:
+- LANGUAGE: {language} ONLY — Do NOT switch to any other language under any circumstance.
 - NEVER say "bhai" or "arre"
 - Talk TO the shop owner only — never address their customers
 - Warm and professional — like a trusted assistant
@@ -299,9 +300,9 @@ Rules:
 
 What to say: {context}
 
-Write one short reply:""",
+Write one short reply in {language} only:""",
             max_tokens=200,
-            temperature=0.5
+            temperature=0.3
         )
     except:
         fallbacks = {
@@ -324,26 +325,23 @@ def greeting_reply(shop, language):
     owner_name = shop.get("owner_name", "")
     plan       = shop.get("plan", "free")
 
-    # Language-appropriate greeting
-    if language == "ENGLISH":
-        name_text = f"Hello {owner_name}!" if owner_name else "Hello!"
-    elif language == "GUJARATI":
-        name_text = f"Namaste {owner_name}ji!" if owner_name else "Namaste!"
-    else:
-        name_text = f"Namaste {owner_name}ji!" if owner_name else "Namaste!"
+    name_text  = f"namaste {owner_name}ji" if owner_name else "namaste"
 
     features_hint = {
-        "free":    "orders and basic reports",
-        "plan99":  "orders, reports and udhaar tracking",
-        "plan199": "orders, reports, udhaar and stock management",
-    }.get(plan, "orders and reports")
+        "free":    "orders aur basic report",
+        "plan99":  "orders, reports aur udhaar tracking",
+        "plan199": "orders, reports, udhaar aur stock management",
+    }.get(plan, "orders aur reports")
 
     return generate_reply(
-        f"Owner greeted Mittu. Greet back with: {name_text} "
-        f"Say in 1 line you are ready to help with {features_hint}. "
-        f"Keep it warm and short. Do not list features.",
+        f"Owner greeted Mittu. Greet back warmly. "
+        f"Address them as '{name_text}' if name known, else just greet warmly. "
+        f"In 1-2 lines say you are ready to help with {features_hint}. "
+        f"Do not list every feature — keep it conversational.",
         language, shop_name, shop_type
     )
+
+
 # ─────────────────────────────────────────
 # LANGUAGE UPGRADE PROMPT
 # ─────────────────────────────────────────
@@ -628,27 +626,26 @@ Return ONLY JSON:""",
     # Build confirmation context
     if amount > 0 and breakdown:
         confirm_context = (
-            f"Confirm this order to the shop owner. "
-            f"Say exactly: {cust} - {breakdown} - total Rs {amount:.0f} - confirmed. "
-            f"CRITICAL: Do not translate any item names. Keep items exactly as written. "
-            f"Reply in {language} language only. 1 line."
+            f"Order confirmed. Tell SHOP OWNER in their language: "
+            f"Customer '{cust}' ordered {breakdown}. Total is Rs {amount:.0f}. Confirmed."
+            f"Keep to 1 line. Use ONLY the language specified."
         )
     elif amount > 0:
         confirm_context = (
-            f"Confirm this order to the shop owner. "
-            f"Say exactly: {cust} - {items} - Rs {amount:.0f} - confirmed. "
-            f"CRITICAL: Do not translate any item names. Keep items exactly as written. "
-            f"Reply in {language} language only. 1 line."
+            f"Order saved. Tell SHOP OWNER in their language: "
+            f"'{cust}' ordered {items}. Amount Rs {amount:.0f}. Confirmed."
+            f"1 line only. Use ONLY the language specified."
         )
     else:
         confirm_context = (
-            f"Order saved for {cust}: {items}. No price yet. "
-            f"Tell owner they can add price by saying: {cust} order price is Rs XX. "
-            f"CRITICAL: Do not translate any item names. Keep items exactly as written. "
-            f"Reply in {language} language only. 2 lines max."
+            f"Order saved, no price yet. Tell SHOP OWNER in their language: "
+            f"'{cust}' order saved for {items}. "
+            f"Ask them to add price like: '{cust} order price is Rs XX'. "
+            f"2 lines max. Use ONLY the language specified."
         )
 
     return generate_reply(confirm_context, language, shop_name, shop_type)
+
 
 # ─────────────────────────────────────────
 # ORDER UPDATE AGENT
@@ -721,8 +718,8 @@ Return ONLY JSON:""",
     new_amount = update_data.get("amount", value)
 
     return generate_reply(
-        f"Order price updated. Tell SHOP OWNER full confirmation: "
-        f"'{customer} ka order — {order_items}, Rs {new_amount} — confirmed.' "
+        f"Order price updated. Confirm to SHOP OWNER: "
+        f"Customer '{customer}' ordered {order_items}, total Rs {new_amount}. Confirmed. "
         f"Show both items and final price. 1 line only.",
         language, shop_name, shop_type
     )
@@ -760,17 +757,10 @@ def report_agent(message, shop, language):
     total_revenue = sum(float(o.get("amount", 0)) for o in orders.data)
 
     if plan == "free":
-        customer_names = list(set([
-            o.get("customer_name", "") 
-            for o in orders.data 
-            if o.get("customer_name") and o.get("customer_name") != "Customer"
-        ]))
-        names_text = ", ".join(customer_names[:5]) if customer_names else "no named customers"
         return generate_reply(
-            f"{period_label}: {total_orders} orders. "
-            f"Customers: {names_text}. "
-            f"Revenue details on Rs 99 plan. "
-            f"Tell count and customer names warmly.",
+            f"{period_label}: {total_orders} orders recorded via WhatsApp. "
+            f"Revenue details available on Rs 99 plan. "
+            f"Tell count warmly — no pushy upgrade message.",
             language, shop_name, shop_type
         )
 
@@ -785,25 +775,11 @@ def report_agent(message, shop, language):
     top_text  = ", ".join([f"{i[0]} ({i[1]}x)" for i in top_items]) \
                 if top_items else "no data yet"
 
-    customer_names = list(set([
-        o.get("customer_name", "")
-        for o in orders.data
-        if o.get("customer_name") and o.get("customer_name") != "Customer"
-    ]))
-    names_text = ", ".join(customer_names[:5]) if customer_names else "no named customers"
-
-    order_list = " | ".join([
-        f"{o.get('customer_name','?')}: {o.get('items','?')} Rs {o.get('amount',0)}"
-        for o in orders.data[-5:]
-    ]) if orders.data else "no orders"
-
     return generate_reply(
         f"{period_label}: {total_orders} orders, "
         f"Rs {total_revenue:.0f} total revenue. "
-        f"Customers: {names_text}. "
-        f"Recent orders: {order_list}. "
         f"Top items: {top_text}. "
-        f"Warm summary. Max 4 lines.",
+        f"Give warm encouraging summary. Max 4 lines.",
         language, shop_name, shop_type
     )
 
