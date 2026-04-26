@@ -5,7 +5,7 @@ from flask import Flask, request
 from twilio.rest import Client
 from supabase import create_client
 from dotenv import load_dotenv
-from datetime import date
+from datetime import date, timedelta
 from groq import Groq
 
 load_dotenv()
@@ -31,8 +31,6 @@ groq_client = Groq(api_key=GROQ_KEY)
 
 # ─────────────────────────────────────────
 # PLAN LIMITS
-# Free/99  → English + Hindi + Hinglish
-# Rs 199   → + Gujarati + Marathi
 # ─────────────────────────────────────────
 PLAN_LIMITS = {
     "free": {
@@ -80,7 +78,7 @@ def language_allowed(shop, language):
 # ─────────────────────────────────────────
 def send_whatsapp(to, message):
     if not message or not message.strip():
-        message = "Kuch technical problem aayi. Thodi der mein try karein. - Mittu"
+        message = "Something went wrong. Please try again. - Mittu"
     client = Client(TWILIO_SID, TWILIO_TOKEN)
     client.messages.create(
         from_=f"whatsapp:{TWILIO_NUMBER}",
@@ -103,8 +101,9 @@ def ask_groq(prompt, max_tokens=300, temperature=0.7):
                     "content": (
                         "You are Mittu, a helpful WhatsApp assistant "
                         "for small Indian businesses. "
-                        "Follow all instructions in the user prompt exactly, "
-                        "especially the language instruction."
+                        "You MUST reply in whatever language is specified "
+                        "in the LANGUAGE field of the prompt. "
+                        "Never ignore the language instruction."
                     )
                 },
                 {"role": "user", "content": prompt}
@@ -119,6 +118,63 @@ def ask_groq(prompt, max_tokens=300, temperature=0.7):
     except Exception as e:
         print(f"Groq error: {e}", flush=True)
         raise e
+
+
+# ─────────────────────────────────────────
+# CORE PRINCIPLE — HOW LANGUAGE WORKS
+#
+# generate_reply() is the ONLY place that
+# talks to Groq for final WhatsApp replies.
+#
+# The 'context' parameter must ALWAYS be
+# written in neutral English — it describes
+# what to say, not how to say it.
+#
+# The language instruction tells Groq which
+# language to OUTPUT the reply in.
+#
+# NEVER put Hindi/Gujarati words in context.
+# NEVER use "ka", "ki", "ne", "hai" in context.
+# ─────────────────────────────────────────
+def generate_reply(context, language, shop_name, shop_type="general"):
+    lang_map = {
+        "ENGLISH":  "English only. Pure English. Zero Hindi/Urdu words.",
+        "HINDI":    "Hindi only. Roman script is fine.",
+        "HINGLISH": "Hinglish — natural Hindi and English mix.",
+        "GUJARATI": "Gujarati only.",
+        "MARATHI":  "Marathi only.",
+    }
+    lang_instruction = lang_map.get(language, "Hindi only.")
+
+    try:
+        reply = ask_groq(
+            f"""LANGUAGE: {lang_instruction}
+
+You are Mittu — WhatsApp assistant for {shop_name} ({shop_type}).
+
+Rules:
+- Output language must be: {lang_instruction}
+- Never say "bhai" or "arre"
+- Speak to the shop owner only
+- MAX 3 lines, no bullet points
+- End with: - Mittu
+
+Message to convey: {context}
+
+Write the reply now in {lang_instruction}:""",
+            max_tokens=200,
+            temperature=0.5
+        )
+        return reply
+    except:
+        fallbacks = {
+            "ENGLISH":  "Something went wrong. Please try again. - Mittu",
+            "HINDI":    "Kuch gadbad hua. Dobara try karein. - Mittu",
+            "HINGLISH": "Kuch issue hua. Please try again. - Mittu",
+            "GUJARATI": "Koi samasya aayi. Pachhi try karo. - Mittu",
+            "MARATHI":  "Kahi problem aali. Punha try kara. - Mittu",
+        }
+        return fallbacks.get(language, fallbacks["ENGLISH"])
 
 
 # ─────────────────────────────────────────
@@ -180,40 +236,37 @@ def format_history(messages):
     if not messages:
         return "No previous messages."
     return "\n".join([
-        f"{'Shop owner' if m['role']=='user' else 'Mittu'}: {m['message']}"
+        f"{'Owner' if m['role']=='user' else 'Mittu'}: {m['message']}"
         for m in messages
     ])
 
 
 # ─────────────────────────────────────────
-# LANGUAGE DETECTOR — Groq based
-# More accurate than rule-based for Roman
+# LANGUAGE DETECTOR
 # ─────────────────────────────────────────
 def detect_language(message, prev_language=None):
-    # Script detection first — always accurate
+    # Script detection — always accurate, no AI needed
     if any('\u0900' <= c <= '\u097F' for c in message):
         return "HINDI"
     if any('\u0A80' <= c <= '\u0AFF' for c in message):
         return "GUJARATI"
 
-    # Groq for Roman script
     try:
         result = ask_groq(
-            f"""What language is this message written in?
+            f"""Detect the language of this message. Return ONLY one word.
 
 Message: "{message}"
 
-Choose exactly one:
-- ENGLISH: pure English, no Hindi words
-- HINDI: Hindi in Roman letters (kaise ho, theek hai, aata, daal)
-- HINGLISH: mix of Hindi and English in same message
-- GUJARATI: Gujarati words (kem chhe, su chhe, tamaro, chho)
-- MARATHI: Marathi words (kay aahe, mala, tumhi, hoil)
+Rules:
+- Pure English sentences with no Hindi words = ENGLISH
+- Hindi written in Roman letters (kaise ho, theek hai, aata, daal, kal, aaj) = HINDI
+- Mix of Hindi and English words in same sentence = HINGLISH
+- Gujarati words (kem chhe, su chhe, tamaro, chho, pan) = GUJARATI
+- Marathi words (kay aahe, mala, tumhi, hoil) = MARATHI
+- Short words alone: Hi, Hello, Ok, Yes, No, Thanks = ENGLISH
+- Previous language was: {prev_language or 'unknown'}
 
-Previous language: {prev_language or 'unknown'}
-Note: "Hi", "Hello", "Ok", "Yes", "No" alone = ENGLISH
-
-Return ONLY one word:""",
+Return exactly one word — ENGLISH, HINDI, HINGLISH, GUJARATI, or MARATHI:""",
             max_tokens=10,
             temperature=0
         ).upper().strip()
@@ -231,28 +284,30 @@ Return ONLY one word:""",
 def detect_intent(message, history=""):
     try:
         result = ask_groq(
-            f"""Classify this WhatsApp message from a small business owner.
-Return ONLY one word — no explanation.
+            f"""Classify this message from a small business owner.
+Return ONLY one word — no punctuation, no explanation.
 
-Recent conversation:
+Conversation so far:
 {history}
 
-Message: "{message}"
+New message: "{message}"
 
-GREETING = hello, hi, how are you, namaste, kem chhe, kaise ho
-ORDER    = recording that someone bought/took something
-           Examples: "Suresh 2kg aata le gaya", "Priya ka order 1L milk",
-           "anil ne dawa li", "customer took goods"
-REPORT   = asking for sales summary, daily/weekly report
-UDHAAR   = tracking credit/udhaar given to customer
-UPDATE   = adding price or updating details of a PREVIOUS order
-           (usually follows an ORDER in conversation history)
+GREETING = greetings like hello, hi, how are you, namaste, kem chhe
+ORDER    = recording a sale or customer purchase
+           "Suresh took 2kg flour", "Nia order 1L milk Rs 30"
+           "customer bought goods", "note order for X"
+REPORT   = asking for sales data, order count, revenue
+UPDATE   = adding price or changing details of a PREVIOUS order
+           (only if previous message was an ORDER)
+UDHAAR   = credit tracking — someone owes money
 HELP     = asking what Mittu can do
-CHAT     = general questions, anything else
+CHAT     = anything else
 
-Important:
-- If message mentions price/Rs for something from history → UPDATE
-- Natural business sentences like "X ne Y liya" or "X took Y" → ORDER
+Key rules:
+- "take an order" or "note an order" alone with no items = ORDER
+  (Mittu will ask for details)
+- Price mentioned after a previous ORDER = UPDATE
+- "yesterday", "kal", "last week" in report = REPORT
 
 Return one word:""",
             max_tokens=10,
@@ -268,110 +323,6 @@ Return one word:""",
         return "CHAT"
     except:
         return "CHAT"
-
-
-# ─────────────────────────────────────────
-# REPLY GENERATOR
-# ─────────────────────────────────────────
-def generate_reply(context, language, shop_name, shop_type="general"):
-    lang_instruction = {
-        "ENGLISH":  "ENGLISH ONLY. Every single word must be English. Do NOT use aap, ki, ka, hai, aur, aapka, hoga, mil, gaya, or any Hindi/Urdu word whatsoever.",
-        "HINDI":    "Hindi only. Roman Hindi is fine. Do not use English sentences.",
-        "HINGLISH": "Natural Hinglish — mix Hindi and English naturally like Indians talk.",
-        "GUJARATI": "Gujarati only.",
-        "MARATHI":  "Marathi only.",
-    }.get(language, "Hindi only.")
-
-    try:
-        return ask_groq(
-            f"""⚠️ STRICT LANGUAGE RULE — YOU MUST REPLY IN {language} ONLY: {lang_instruction}
-
-You are Mittu — a respectful WhatsApp assistant for small Indian businesses.
-Shop: {shop_name} ({shop_type})
-
-Rules:
-- LANGUAGE: {language} ONLY — Do NOT switch to any other language under any circumstance.
-- NEVER say "bhai" or "arre"
-- Talk TO the shop owner only — never address their customers
-- Warm and professional — like a trusted assistant
-- MAX 3 lines — short and clear
-- No bullet points
-- End with: - Mittu
-
-What to say: {context}
-
-Write one short reply in {language} only:""",
-            max_tokens=200,
-            temperature=0.3
-        )
-    except:
-        fallbacks = {
-            "HINDI":    "Kuch technical gadbad hua. Thodi der baad try karein. - Mittu",
-            "GUJARATI": "Thodi technical samasya. Pachhi try karo. - Mittu",
-            "MARATHI":  "Thodi technical samasya. Punha try kara. - Mittu",
-            "ENGLISH":  "Something went wrong. Please try again. - Mittu",
-            "HINGLISH": "Kuch issue aa gayi. Thodi der mein try karo. - Mittu",
-        }
-        return fallbacks.get(language, fallbacks["HINDI"])
-
-
-# ─────────────────────────────────────────
-# GREETING HANDLER
-# Mittu greets back warmly
-# ─────────────────────────────────────────
-def greeting_reply(shop, language):
-    shop_name  = shop.get("name", "aapki dukaan")
-    shop_type  = shop.get("shop_type", "general")
-    owner_name = shop.get("owner_name", "")
-    plan       = shop.get("plan", "free")
-
-    name_text  = f"namaste {owner_name}ji" if owner_name else "namaste"
-
-    features_hint = {
-        "free":    "orders aur basic report",
-        "plan99":  "orders, reports aur udhaar tracking",
-        "plan199": "orders, reports, udhaar aur stock management",
-    }.get(plan, "orders aur reports")
-
-    return generate_reply(
-        f"Owner greeted Mittu. Greet back warmly. "
-        f"Address them as '{name_text}' if name known, else just greet warmly. "
-        f"In 1-2 lines say you are ready to help with {features_hint}. "
-        f"Do not list every feature — keep it conversational.",
-        language, shop_name, shop_type
-    )
-
-
-# ─────────────────────────────────────────
-# LANGUAGE UPGRADE PROMPT
-# ─────────────────────────────────────────
-def language_upgrade_reply(language, shop, shop_name):
-    lang_display = {
-        "GUJARATI": "Gujarati",
-        "MARATHI":  "Marathi",
-    }.get(language, language.title())
-    plan = shop.get("plan", "free")
-
-    # Always reply in English for upgrade messages
-    # to avoid garbled mixed-language text
-    return generate_reply(
-        f"{lang_display} language support is available on the Rs 199 plan. "
-        f"Currently on {plan} plan — Hindi and English are supported. "
-        f"Tell owner politely and suggest upgrading for {lang_display} support.",
-        "ENGLISH", shop_name
-    )
-
-
-# ─────────────────────────────────────────
-# CONFUSION HANDLER
-# ─────────────────────────────────────────
-def confusion_reply(language, shop_name):
-    return generate_reply(
-        "Did not understand this message clearly. "
-        "Apologize briefly and ask to repeat with more detail. "
-        "Give one example appropriate for their business.",
-        language, shop_name
-    )
 
 
 # ─────────────────────────────────────────
@@ -399,146 +350,162 @@ def update_shop(shop_id, data):
 
 
 # ─────────────────────────────────────────
+# GREETING HANDLER
+# ─────────────────────────────────────────
+def greeting_reply(shop, language):
+    shop_name  = shop.get("name", "your shop")
+    shop_type  = shop.get("shop_type", "general")
+    owner_name = shop.get("owner_name", "")
+    plan       = shop.get("plan", "free")
+
+    features = {
+        "free":    "orders and basic daily report",
+        "plan99":  "orders, reports and udhaar tracking",
+        "plan199": "orders, reports, udhaar and stock management",
+    }.get(plan, "orders and reports")
+
+    name_part = f"Hello {owner_name}" if (owner_name and language == "ENGLISH") \
+                else (f"Namaste {owner_name}ji" if owner_name else "")
+
+    return generate_reply(
+        f"The shop owner just greeted you. "
+        f"{'Address them as: ' + name_part + '.' if name_part else 'Greet them warmly.'} "
+        f"In one short sentence say you are ready to help with {features}.",
+        language, shop_name, shop_type
+    )
+
+
+# ─────────────────────────────────────────
+# LANGUAGE UPGRADE
+# ─────────────────────────────────────────
+def language_upgrade_reply(language, shop, shop_name):
+    lang_display = {"GUJARATI": "Gujarati", "MARATHI": "Marathi"}.get(
+        language, language.title())
+    plan = shop.get("plan", "free")
+    return generate_reply(
+        f"{lang_display} language support requires the Rs 199 plan. "
+        f"Currently on {plan} plan which supports Hindi and English. "
+        f"Let the owner know politely.",
+        "ENGLISH", shop_name
+    )
+
+
+# ─────────────────────────────────────────
+# CONFUSION HANDLER
+# ─────────────────────────────────────────
+def confusion_reply(language, shop_name, shop_type="general"):
+    return generate_reply(
+        "You did not understand the message. "
+        "Apologize briefly and ask them to repeat with more detail.",
+        language, shop_name, shop_type
+    )
+
+
+# ─────────────────────────────────────────
 # ONBOARDING FLOW
-#
-# Step 0 → Welcome + ask shop name
-# Step 1 → Save name + ask shop type
-# Step 2 → Save shop type + ask owner name
-# Step 3 → Save owner name + complete
-#
-# Now collects: shop name, shop type, owner name
-# Works for all business types not just kirana
+# Step 0 → ask shop name
+# Step 1 → ask shop type
+# Step 2 → ask owner name
+# Step 3 → complete
 # ─────────────────────────────────────────
 def handle_onboarding(message, shop, language):
-    step         = shop.get("onboard_step", 0)
-    onboard_lang = "ENGLISH" if language == "ENGLISH" else "HINDI"
-    lang_text    = "English" if onboard_lang == "ENGLISH" else "Hindi (Roman script)"
+    step = shop.get("onboard_step", 0)
+
+    # Onboarding language — match what owner used
+    ob_lang = language
 
     if step == 0:
         update_shop(shop["id"], {"onboard_step": 1})
-        return ask_groq(
-            f"""You are Mittu, a WhatsApp assistant for small Indian businesses.
-Reply in: {lang_text}
-
-Write a warm short welcome message.
-Say Mittu helps any small business with:
-orders tracking, daily sales reports, udhaar (credit) tracking.
-Ask: "Aapki dukaan ya business ka naam kya hai?"
-Use "aap". Never "bhai". Max 3 lines. End: - Mittu""",
-            max_tokens=150, temperature=0.5
+        return generate_reply(
+            "Welcome the owner warmly. "
+            "Say Mittu helps any small business with: "
+            "recording orders, daily sales reports, and credit tracking. "
+            "Ask: What is the name of their shop or business?",
+            ob_lang, "Mittu"
         )
 
     elif step == 1:
-        # Save shop name
         raw       = message.strip()
         extracted = ask_groq(
-            f"""Extract only the business or shop name from this message.
+            f"""Extract only the shop or business name from this message.
 Message: "{raw}"
 Examples:
 "Sharma Medical Store" → Sharma Medical Store
-"mera naam JRH hai" → JRH
+"my shop is JRH" → JRH
 "ABC Hardware" → ABC Hardware
-Return ONLY the name, nothing else:""",
+"naam hai Mittu Store" → Mittu Store
+Return ONLY the name — nothing else:""",
             max_tokens=30, temperature=0
         ).strip().title()
 
         shop_name = extracted if 0 < len(extracted) < 60 else raw.title()
         update_shop(shop["id"], {"name": shop_name, "onboard_step": 2})
 
-        return ask_groq(
-            f"""You are Mittu.
-Reply in: {lang_text}
-Shop name: {shop_name}
-
-Great, you have the shop name. Welcome them.
-Now ask what TYPE of business it is.
-Give examples: kirana, medical/pharmacy, dairy, 
-vegetables, hardware, clothing, restaurant, salon, etc.
-Say "Aapka business kis type ka hai?"
-Use "aap". Max 3 lines. End: - Mittu""",
-            max_tokens=150, temperature=0.5
+        return generate_reply(
+            f"Shop name saved: {shop_name}. "
+            f"Welcome them using the shop name. "
+            f"Now ask what type of business it is — "
+            f"for example: kirana, medical, dairy, hardware, clothing, salon, etc.",
+            ob_lang, shop_name
         )
 
     elif step == 2:
-        # Save shop type
         raw       = message.strip()
-        # Extract a clean shop type
         extracted = ask_groq(
-            f"""Identify the type of business from this message.
+            f"""Identify the business type from this message.
 Message: "{raw}"
-
-Return one of these or a similar short label:
-kirana, medical, dairy, vegetables, hardware, 
-clothing, restaurant, salon, electronics, stationery,
-bakery, furniture, auto-parts, general
-
-Return ONLY the type word — nothing else:""",
+Return one short label like:
+kirana, medical, dairy, vegetables, hardware, clothing,
+restaurant, salon, electronics, bakery, general
+Return ONLY the label:""",
             max_tokens=15, temperature=0
         ).strip().lower()
 
         shop_type = extracted if extracted else "general"
-        shop_name = shop.get("name", "aapki dukaan")
+        shop_name = shop.get("name", "your shop")
         update_shop(shop["id"], {"shop_type": shop_type, "onboard_step": 3})
 
-        return ask_groq(
-            f"""You are Mittu.
-Reply in: {lang_text}
-Shop: {shop_name} ({shop_type})
-
-Acknowledge the shop type warmly.
-Now ask the owner's name:
-"Aapka naam kya hai?"
-Use "aap". Max 2 lines. End: - Mittu""",
-            max_tokens=100, temperature=0.5
+        return generate_reply(
+            f"Business type noted: {shop_type}. "
+            f"Acknowledge warmly. "
+            f"Now ask the owner their name.",
+            ob_lang, shop_name, shop_type
         )
 
     else:
-        # Save owner name and complete onboarding
         raw       = message.strip()
         extracted = ask_groq(
-            f"""Extract only the person's first name.
+            f"""Extract the person's first name from this message.
 Message: "{raw}"
-Examples: "mera naam Rahul hai" → Rahul | "I am Priya" → Priya
+Examples: "my name is Rahul" → Rahul | "main Priya hoon" → Priya
 Return ONLY the first name:""",
             max_tokens=15, temperature=0
         ).strip().title()
 
         owner_name = extracted if 0 < len(extracted) < 30 else raw.title()
-        shop_name  = shop.get("name", "aapki dukaan")
+        shop_name  = shop.get("name", "your shop")
         shop_type  = shop.get("shop_type", "general")
 
-        update_shop(shop["id"], {
-            "owner_name": owner_name,
-            "onboarded":  True
-        })
+        update_shop(shop["id"], {"owner_name": owner_name, "onboarded": True})
 
-        return ask_groq(
-            f"""You are Mittu.
-Reply in: {lang_text}
-Owner: {owner_name}
-Shop: {shop_name} ({shop_type})
-
-CRITICAL LANGUAGE RULE:
-- If lang_text is English → use ONLY pure English. Never write "aap", "ki", "ka", "hai", "aur" in English replies.
-- If lang_text is Hindi → use Hindi or Hinglish naturally.
-
-Welcome owner by name warmly. Say Mittu is ready for their {shop_type} business.
-Give 3 natural examples relevant to their business type:
-- For order: "[Customer name] ne [item] liya" or "[Customer] ka order [items]"
-- For report: "today's report" or "aaj ka report dikhao"
-- For udhaar: "[Customer] ko Rs [amount] ka udhaar diya" (paid plan)
-Say type naturally — no special format needed.
-Max 5 lines. End: - Mittu""",
-            max_tokens=280, temperature=0.5
+        return generate_reply(
+            f"Onboarding complete. Owner name: {owner_name}. "
+            f"Greet them by name warmly. "
+            f"Say Mittu is ready for their {shop_type} business. "
+            f"Give 3 short examples of what they can type naturally: "
+            f"1) recording a customer order "
+            f"2) asking for today's report "
+            f"3) tracking credit given to a customer (paid plan). "
+            f"Tell them no special commands needed — just type naturally.",
+            ob_lang, shop_name, shop_type
         )
+
+
 # ─────────────────────────────────────────
 # AGENT 1 — ORDER AGENT
-#
-# Auto-calculates total when multiple items
-# have individual prices mentioned
 # ─────────────────────────────────────────
 def order_agent(message, shop, language, history=""):
-    shop_name = shop.get("name", "aapki dukaan")
+    shop_name = shop.get("name", "your shop")
     shop_type = shop.get("shop_type", "general")
     limit     = get_limit(shop, "orders_per_day")
     today     = date.today().isoformat()
@@ -553,35 +520,39 @@ def order_agent(message, shop, language, history=""):
         return generate_reply(
             f"Daily order limit of {limit} reached on "
             f"{shop.get('plan','free')} plan. "
-            f"Tell politely. Suggest Rs 99 for unlimited.",
+            f"Tell them politely and suggest upgrading to Rs 99 for unlimited orders.",
             language, shop_name, shop_type
         )
 
-    # Extract order with auto-calculation
+    # Extract order — use only the current message for new orders
+    # History is provided only for reference resolution not extraction
     extracted = ask_groq(
-        f"""Extract order details from this business owner message.
+        f"""Extract order details from this message.
 Business type: {shop_type}
-Use history for references like "uska", "iska".
 
-History: {history}
-Message: "{message}"
+IMPORTANT: Extract from the CURRENT message only.
+Use history ONLY to resolve pronouns like "her", "his", "their".
+Do NOT carry over items from previous orders.
 
-IMPORTANT — Auto calculate total:
-If multiple items each with their own price are mentioned,
-add them up and put total in "amount" field.
-Example: "2kg daal Rs 100 aur dudh Rs 50" → amount = 150.0
+History (for pronoun resolution only):
+{history}
+
+Current message: "{message}"
+
+Auto-calculate total if multiple items have individual prices:
+Example: "milk Rs 30 and biscuits Rs 45" → amount = 75.0
 
 Return ONLY valid JSON:
 {{"customer_name": "name",
-  "items": "full items description with individual prices",
+  "items": "items exactly as written in current message",
   "amount": 0.0,
   "item_breakdown": "item1 Rs X, item2 Rs Y"}}
 
-- customer_name: who bought / who the order is for
-- items: what was bought (keep original text)
-- amount: TOTAL price (sum of all items if multiple prices given)
-- item_breakdown: each item with its price if multiple items
-- Use 0.0 if no price mentioned at all
+Rules:
+- items: copy EXACTLY from the current message, do not translate
+- amount: sum of all item prices mentioned in current message
+- item_breakdown: each item with its individual price
+- 0.0 if no price mentioned
 
 Return ONLY JSON:""",
         max_tokens=200, temperature=0
@@ -594,25 +565,27 @@ Return ONLY JSON:""",
         "item_breakdown": ""
     }
 
-    cust       = str(details.get("customer_name", "Customer")).strip()
-    items      = str(details.get("items", message)).strip()
-    amount     = float(details.get("amount", 0))
-    breakdown  = str(details.get("item_breakdown", "")).strip()
+    cust      = str(details.get("customer_name", "Customer")).strip()
+    items     = str(details.get("items", message)).strip()
+    amount    = float(details.get("amount", 0))
+    breakdown = str(details.get("item_breakdown", "")).strip()
 
-     # NEW — if items is just the original vague message
-    # it means no real order was found — ask for details
-    vague_phrases = [
-        "can you take", "please take", "note order",
-        "ek order", "order lena", "order lo", "order chahiye"
+    # If no real order details extracted — ask for them
+    vague = [
+        "can you take", "please take", "note order", "take order",
+        "ek order", "order lena", "order lo", "order chahiye",
+        "order please", "take one order"
     ]
-    if any(p in items.lower() for p in vague_phrases) or items.lower() == message.lower():
+    if any(p in message.lower() for p in vague) and (
+        items.lower() == message.lower() or len(items) > len(message) * 0.8
+    ):
         return generate_reply(
-            "Owner wants to place an order but did not give details yet. "
-            "Ask them: who is the customer and what do they want to order? "
-            "Be warm and brief. Do NOT save anything.",
+            "The owner wants to record an order but has not provided details yet. "
+            "Ask them: who is the customer and what items do they want to order?",
             language, shop_name, shop_type
         )
 
+    # Save order
     db.table("orders").insert({
         "shop_id":       shop["id"],
         "customer_name": cust,
@@ -623,41 +596,45 @@ Return ONLY JSON:""",
 
     print(f"Order: {cust} | {items} | Rs {amount}", flush=True)
 
-    # Build confirmation context
+    # Build confirmation — ALL in neutral English, no Hindi words
     if amount > 0 and breakdown:
-        confirm_context = (
-            f"Order confirmed. Tell SHOP OWNER in their language: "
-            f"Customer '{cust}' ordered {breakdown}. Total is Rs {amount:.0f}. Confirmed."
-            f"Keep to 1 line. Use ONLY the language specified."
+        confirm = (
+            f"Order saved successfully. "
+            f"Customer: {cust}. "
+            f"Items: {breakdown}. "
+            f"Total: Rs {amount:.0f}. "
+            f"Confirmed. Keep items exactly as written, do not translate them."
         )
     elif amount > 0:
-        confirm_context = (
-            f"Order saved. Tell SHOP OWNER in their language: "
-            f"'{cust}' ordered {items}. Amount Rs {amount:.0f}. Confirmed."
-            f"1 line only. Use ONLY the language specified."
+        confirm = (
+            f"Order saved successfully. "
+            f"Customer: {cust}. "
+            f"Items: {items}. "
+            f"Amount: Rs {amount:.0f}. "
+            f"Confirmed. Keep items exactly as written, do not translate them."
         )
     else:
-        confirm_context = (
-            f"Order saved, no price yet. Tell SHOP OWNER in their language: "
-            f"'{cust}' order saved for {items}. "
-            f"Ask them to add price like: '{cust} order price is Rs XX'. "
-            f"2 lines max. Use ONLY the language specified."
+        confirm = (
+            f"Order saved for customer {cust}: {items}. "
+            f"No price was mentioned. "
+            f"Tell owner they can add price anytime by sending: "
+            f"'{cust} order price is Rs [amount]'. "
+            f"Keep items exactly as written, do not translate them."
         )
 
-    return generate_reply(confirm_context, language, shop_name, shop_type)
+    return generate_reply(confirm, language, shop_name, shop_type)
 
 
 # ─────────────────────────────────────────
 # ORDER UPDATE AGENT
-# Links price back to original order items
 # ─────────────────────────────────────────
 def order_update_agent(message, shop, language, history=""):
-    shop_name = shop.get("name", "aapki dukaan")
+    shop_name = shop.get("name", "your shop")
     shop_type = shop.get("shop_type", "general")
 
     extracted = ask_groq(
-        f"""Owner is updating a previous order — likely adding price.
-Use history to identify which customer's order.
+        f"""Owner is updating a previous order.
+Use history to find which customer.
 
 History:
 {history}
@@ -666,17 +643,14 @@ Message: "{message}"
 
 Return ONLY valid JSON:
 {{"customer_name": "name", "field": "amount", "value": "new value"}}
-
 field: amount / items / status
-- price/Rs mentioned → field is "amount"
-- Use history to find customer name
 Return ONLY JSON:""",
         max_tokens=100, temperature=0
     )
 
     details = safe_json(extracted)
     if not details or not details.get("customer_name"):
-        return confusion_reply(language, shop_name)
+        return confusion_reply(language, shop_name, shop_type)
 
     customer    = str(details.get("customer_name", "")).strip()
     field       = details.get("field", "amount")
@@ -713,57 +687,84 @@ Return ONLY JSON:""",
     db.table("orders").update(update_data)\
         .eq("id", order_id).execute()
 
-    print(f"Updated: {order_id} {update_data}", flush=True)
+    print(f"Updated order {order_id}: {update_data}", flush=True)
 
     new_amount = update_data.get("amount", value)
 
+    # Context in pure English — no Hindi words
     return generate_reply(
-        f"Order price updated. Confirm to SHOP OWNER: "
-        f"Customer '{customer}' ordered {order_items}, total Rs {new_amount}. Confirmed. "
-        f"Show both items and final price. 1 line only.",
+        f"Order updated. "
+        f"Customer: {customer}. "
+        f"Items: {order_items}. "
+        f"Final price: Rs {new_amount}. "
+        f"Confirmed. Keep items exactly as written, do not translate.",
         language, shop_name, shop_type
     )
 
 
 # ─────────────────────────────────────────
 # AGENT 2 — REPORT AGENT
+# Now handles: today, yesterday, this week,
+# last week, this month
 # ─────────────────────────────────────────
 def report_agent(message, shop, language):
-    shop_name = shop.get("name", "aapki dukaan")
+    shop_name = shop.get("name", "your shop")
     shop_type = shop.get("shop_type", "general")
     plan      = shop.get("plan", "free")
     msg_lower = message.lower()
 
-    if any(w in msg_lower for w in ["week", "hafte", "weekly", "hafta", "saptah"]):
-        report_type  = "weekly"
+    # Determine date range
+    today = date.today()
+
+    if any(w in msg_lower for w in ["yesterday", "kal", "kal ka", "kal ke"]):
+        start_date   = (today - timedelta(days=1)).isoformat()
+        end_date     = today.isoformat()
+        period_label = "Yesterday"
+    elif any(w in msg_lower for w in ["last week", "pichle hafte", "pichla hafta"]):
+        start_date   = (today - timedelta(days=14)).isoformat()
+        end_date     = (today - timedelta(days=7)).isoformat()
+        period_label = "Last week"
+    elif any(w in msg_lower for w in ["week", "hafte", "weekly", "hafta", "saptah"]):
+        start_date   = (today - timedelta(days=7)).isoformat()
+        end_date     = (today + timedelta(days=1)).isoformat()
         period_label = "This week"
-        start_date   = __import__('datetime').date.today().__class__.today()
-        from datetime import timedelta
-        start_date = (date.today() - timedelta(days=7)).isoformat()
     elif any(w in msg_lower for w in ["month", "mahine", "monthly", "mahina"]):
-        report_type  = "monthly"
+        start_date   = today.replace(day=1).isoformat()
+        end_date     = (today + timedelta(days=1)).isoformat()
         period_label = "This month"
-        start_date   = date.today().replace(day=1).isoformat()
     else:
-        report_type  = "daily"
+        start_date   = today.isoformat()
+        end_date     = (today + timedelta(days=1)).isoformat()
         period_label = "Today"
-        start_date   = date.today().isoformat()
 
     orders = db.table("orders")\
-        .select("*").eq("shop_id", shop["id"])\
-        .gte("created_at", start_date).execute()
+        .select("*")\
+        .eq("shop_id", shop["id"])\
+        .gte("created_at", start_date)\
+        .lt("created_at", end_date)\
+        .execute()
 
     total_orders  = len(orders.data)
     total_revenue = sum(float(o.get("amount", 0)) for o in orders.data)
 
+    customer_names = list(set([
+        o.get("customer_name", "")
+        for o in orders.data
+        if o.get("customer_name") and o.get("customer_name") != "Customer"
+    ]))
+    names_text = ", ".join(customer_names[:5]) if customer_names else "none recorded"
+
     if plan == "free":
         return generate_reply(
-            f"{period_label}: {total_orders} orders recorded via WhatsApp. "
-            f"Revenue details available on Rs 99 plan. "
-            f"Tell count warmly — no pushy upgrade message.",
+            f"Report for {period_label}: "
+            f"{total_orders} orders recorded. "
+            f"Customers: {names_text}. "
+            f"Revenue tracking is available on the Rs 99 plan. "
+            f"Share this information warmly.",
             language, shop_name, shop_type
         )
 
+    # Paid plans
     item_counts = {}
     for o in orders.data:
         for item in o.get("items", "").split(","):
@@ -773,13 +774,20 @@ def report_agent(message, shop, language):
 
     top_items = sorted(item_counts.items(), key=lambda x: x[1], reverse=True)[:3]
     top_text  = ", ".join([f"{i[0]} ({i[1]}x)" for i in top_items]) \
-                if top_items else "no data yet"
+                if top_items else "no data"
+
+    recent = " | ".join([
+        f"{o.get('customer_name','?')}: {o.get('items','?')} Rs {o.get('amount',0)}"
+        for o in orders.data[-5:]
+    ]) if orders.data else "no orders"
 
     return generate_reply(
-        f"{period_label}: {total_orders} orders, "
-        f"Rs {total_revenue:.0f} total revenue. "
+        f"Report for {period_label}: "
+        f"{total_orders} orders, Rs {total_revenue:.0f} total revenue. "
+        f"Customers: {names_text}. "
         f"Top items: {top_text}. "
-        f"Give warm encouraging summary. Max 4 lines.",
+        f"Recent: {recent}. "
+        f"Give a warm encouraging summary.",
         language, shop_name, shop_type
     )
 
@@ -788,25 +796,25 @@ def report_agent(message, shop, language):
 # AGENT 3 — UDHAAR AGENT
 # ─────────────────────────────────────────
 def udhaar_agent(message, shop, language, history=""):
-    shop_name = shop.get("name", "aapki dukaan")
+    shop_name = shop.get("name", "your shop")
     shop_type = shop.get("shop_type", "general")
     plan      = shop.get("plan", "free")
 
     if plan == "free":
         return generate_reply(
-            "Udhaar tracking not on free plan. "
-            "Tell politely. Rs 99 plan mein 5 customers ka udhaar milega.",
+            "Udhaar tracking is not available on the free plan. "
+            "It is available on the Rs 99 plan for up to 5 customers.",
             language, shop_name, shop_type
         )
 
     extracted = ask_groq(
-        f"""Extract udhaar details.
+        f"""Extract credit/udhaar tracking details.
 History: {history}
 Message: "{message}"
 Return ONLY valid JSON:
 {{"customer_name": "name", "amount": 0.0,
   "action": "add", "description": "reason"}}
-action: add / paid / check / list
+action options: add / paid / check / list
 Return ONLY JSON:""",
         max_tokens=100, temperature=0
     )
@@ -830,9 +838,9 @@ Return ONLY JSON:""",
         names = ", ".join([
             f"{u['customer_name']} Rs {u['amount']}"
             for u in all_udhaar.data
-        ]) if all_udhaar.data else "no pending udhaar"
+        ]) if all_udhaar.data else "no pending credit"
         return generate_reply(
-            f"Udhaar list: {names}. Total: Rs {total}. Present clearly.",
+            f"Credit list: {names}. Total outstanding: Rs {total}.",
             language, shop_name, shop_type
         )
 
@@ -843,7 +851,7 @@ Return ONLY JSON:""",
             .eq("status", "pending").execute()
         total = sum(float(u.get("amount", 0)) for u in rows.data)
         return generate_reply(
-            f"{customer_name} owes Rs {total} total. Tell owner clearly.",
+            f"{customer_name} has a total pending credit of Rs {total}.",
             language, shop_name, shop_type
         )
 
@@ -854,10 +862,11 @@ Return ONLY JSON:""",
             .ilike("customer_name", f"%{customer_name}%")\
             .eq("status", "pending").execute()
         return generate_reply(
-            f"{customer_name} paid their udhaar. Good news for owner!",
+            f"{customer_name} has cleared their credit. Share this good news.",
             language, shop_name, shop_type
         )
 
+    # ADD
     udhaar_limit   = get_limit(shop, "udhaar_persons")
     existing       = db.table("udhaar")\
         .select("customer_name")\
@@ -870,8 +879,9 @@ Return ONLY JSON:""",
     if customer_name.lower() not in existing_names:
         if len(existing_names) >= udhaar_limit:
             return generate_reply(
-                f"Udhaar limit of {udhaar_limit} reached on {plan}. "
-                f"Tell politely. Rs 199 for unlimited.",
+                f"Credit tracking limit of {udhaar_limit} customers reached "
+                f"on the {plan} plan. "
+                f"The Rs 199 plan offers unlimited credit tracking.",
                 language, shop_name, shop_type
             )
 
@@ -885,8 +895,9 @@ Return ONLY JSON:""",
 
     print(f"Udhaar: {customer_name} Rs {amount}", flush=True)
     return generate_reply(
-        f"Udhaar saved. {customer_name} owes Rs {amount}. "
-        f"Digital bahi khata updated. 1 line.",
+        f"Credit entry saved. "
+        f"Customer {customer_name} now owes Rs {amount}. "
+        f"Digital ledger updated.",
         language, shop_name, shop_type
     )
 
@@ -895,28 +906,35 @@ Return ONLY JSON:""",
 # AGENT 4 — HELP AGENT
 # ─────────────────────────────────────────
 def help_agent(shop, language):
-    shop_name = shop.get("name", "aapki dukaan")
+    shop_name = shop.get("name", "your shop")
     shop_type = shop.get("shop_type", "general")
     plan      = shop.get("plan", "free")
 
     features = {
-        "free": "orders (10/day) in Hindi+English, basic daily count",
+        "free": (
+            "record orders (10 per day), "
+            "see today's order count and customer names"
+        ),
         "plan99": (
-            "unlimited orders, daily+weekly+monthly sales report, "
-            "top selling items, udhaar for 5 customers"
+            "unlimited orders, "
+            "daily, weekly and monthly sales reports with revenue, "
+            "top selling items, "
+            "credit tracking for up to 5 customers"
         ),
         "plan199": (
-            "everything in Rs 99 + Gujarati+Marathi language, "
-            "unlimited udhaar, stock management, "
-            "GST invoice, monthly profit report"
+            "everything in the Rs 99 plan, "
+            "plus Gujarati and Marathi language support, "
+            "unlimited credit tracking, "
+            "stock management, "
+            "GST invoices"
         ),
     }
 
     return generate_reply(
-        f"Tell owner Mittu features on their {plan} plan: "
+        f"Explain what Mittu can do for this {shop_type} business on their {plan} plan: "
         f"{features.get(plan, features['free'])}. "
-        f"Give 2 natural examples for {shop_type} business. "
-        f"Say type naturally — no format needed. Max 5 lines.",
+        f"Give 2 natural examples. "
+        f"Tell them to just type naturally — no special format needed.",
         language, shop_name, shop_type
     )
 
@@ -933,10 +951,10 @@ def webhook():
     print(f"From:    {sender_phone}", flush=True)
     print(f"Message: {incoming_msg}", flush=True)
 
-    # Step 1 — shop
+    # Step 1 — get or create shop
     shop = get_or_create_shop(sender_phone)
 
-    # Step 2 — language
+    # Step 2 — detect language
     prev_lang = (shop.get("language") or "HINDI").upper()
     language  = detect_language(incoming_msg, prev_lang)
     print(f"Language: {language}", flush=True)
@@ -944,14 +962,14 @@ def webhook():
     update_shop(shop["id"], {"language": language.lower()})
     shop["language"] = language.lower()
 
-    # Step 3 — history
+    # Step 3 — conversation history
     history_raw = get_conversation_history(shop["id"], limit=5)
     history     = format_history(history_raw)
 
-    # Step 4 — save message
+    # Step 4 — save incoming message
     save_message(shop["id"], "user", incoming_msg)
 
-    # Step 5 — ONBOARDING
+    # Step 5 — onboarding check
     if not shop.get("onboarded", False):
         step = shop.get("onboard_step", 0)
         if step <= 2:
@@ -970,7 +988,7 @@ def webhook():
             send_whatsapp(sender_phone, reply)
             return "OK", 200
 
-    shop_name = shop.get("name", "aapki dukaan")
+    shop_name = shop.get("name", "your shop")
     shop_type = shop.get("shop_type", "general")
 
     # Step 6 — language plan check
@@ -980,34 +998,28 @@ def webhook():
         send_whatsapp(sender_phone, reply)
         return "OK", 200
 
-    # Step 7 — ORCHESTRATOR
+    # Step 7 — detect intent and route
     intent = detect_intent(incoming_msg, history)
     print(f"Intent: {intent}", flush=True)
 
     try:
         if intent == "GREETING":
             reply = greeting_reply(shop, language)
-
         elif intent == "ORDER":
             reply = order_agent(incoming_msg, shop, language, history)
-
         elif intent == "UPDATE":
             reply = order_update_agent(incoming_msg, shop, language, history)
-
         elif intent == "REPORT":
             reply = report_agent(incoming_msg, shop, language)
-
         elif intent == "UDHAAR":
             reply = udhaar_agent(incoming_msg, shop, language, history)
-
         elif intent == "HELP":
             reply = help_agent(shop, language)
-
         else:
             reply = generate_reply(
-                f"Respond warmly to: '{incoming_msg}'. "
-                f"If not business related, guide to use Mittu for "
-                f"recording orders, getting reports, or tracking udhaar.",
+                f"Respond warmly to this message: '{incoming_msg}'. "
+                f"If not business related, gently guide the owner to use Mittu "
+                f"for recording orders, getting reports, or tracking credit.",
                 language, shop_name, shop_type
             )
 
@@ -1015,13 +1027,13 @@ def webhook():
         print(f"Agent error: {e}", flush=True)
         sys.stdout.flush()
         fallbacks = {
-            "HINDI":    "Kuch technical gadbad hua. Thodi der baad try karein. - Mittu",
-            "GUJARATI": "Thodi technical samasya. Pachhi try karo. - Mittu",
-            "MARATHI":  "Thodi technical samasya. Punha try kara. - Mittu",
             "ENGLISH":  "Something went wrong. Please try again. - Mittu",
-            "HINGLISH": "Kuch issue aa gayi. Thodi der mein try karo. - Mittu",
+            "HINDI":    "Kuch gadbad hua. Dobara try karein. - Mittu",
+            "HINGLISH": "Kuch issue hua. Please try again. - Mittu",
+            "GUJARATI": "Koi samasya aayi. Pachhi try karo. - Mittu",
+            "MARATHI":  "Kahi problem aali. Punha try kara. - Mittu",
         }
-        reply = fallbacks.get(language, fallbacks["HINDI"])
+        reply = fallbacks.get(language, fallbacks["ENGLISH"])
 
     # Step 8 — save and send
     save_message(shop["id"], "mittu", reply)
