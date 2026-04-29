@@ -99,11 +99,11 @@ def ask_groq(prompt, max_tokens=300, temperature=0.7):
                 {
                     "role": "system",
                     "content": (
-                        "You are Mittu, a helpful WhatsApp assistant "
-                        "for small Indian businesses. "
-                        "You MUST reply in whatever language is specified "
-                        "in the LANGUAGE field of the prompt. "
-                        "Never ignore the language instruction."
+                        "You are Mittu, a WhatsApp assistant. "
+                        "You MUST follow the LANGUAGE instruction "
+                        "in every prompt exactly. "
+                        "If it says English only — every single word "
+                        "must be English. No exceptions."
                     )
                 },
                 {"role": "user", "content": prompt}
@@ -118,8 +118,6 @@ def ask_groq(prompt, max_tokens=300, temperature=0.7):
     except Exception as e:
         print(f"Groq error: {e}", flush=True)
         raise e
-
-
 # ─────────────────────────────────────────
 # CORE PRINCIPLE — HOW LANGUAGE WORKS
 #
@@ -136,36 +134,35 @@ def ask_groq(prompt, max_tokens=300, temperature=0.7):
 # NEVER put Hindi/Gujarati words in context.
 # NEVER use "ka", "ki", "ne", "hai" in context.
 # ─────────────────────────────────────────
+
 def generate_reply(context, language, shop_name, shop_type="general"):
     lang_map = {
-        "ENGLISH":  "English only. Pure English. Zero Hindi/Urdu words.",
-        "HINDI":    "Hindi only. Roman script is fine.",
-        "HINGLISH": "Hinglish — natural Hindi and English mix.",
-        "GUJARATI": "Gujarati only.",
-        "MARATHI":  "Marathi only.",
+        "ENGLISH":  "ENGLISH ONLY — every word must be English",
+        "HINDI":    "HINDI ONLY — Roman or Devanagari",
+        "HINGLISH": "HINGLISH — natural Hindi-English mix",
+        "GUJARATI": "GUJARATI ONLY",
+        "MARATHI":  "MARATHI ONLY",
     }
-    lang_instruction = lang_map.get(language, "Hindi only.")
+    lang = lang_map.get(language, "HINDI ONLY")
 
     try:
-        reply = ask_groq(
-            f"""LANGUAGE: {lang_instruction}
+        return ask_groq(
+            f"""LANGUAGE INSTRUCTION: {lang}
+LANGUAGE INSTRUCTION: {lang}
 
-You are Mittu — WhatsApp assistant for {shop_name} ({shop_type}).
+You are Mittu for {shop_name}.
 
 Rules:
-- Output language must be: {lang_instruction}
-- Never say "bhai" or "arre"
-- Speak to the shop owner only
-- MAX 3 lines, no bullet points
+- Output language: {lang}
+- Never say bhai or arre
+- Talk to shop owner only, 3 lines max
 - End with: - Mittu
 
-Message to convey: {context}
-
-Write the reply now in {lang_instruction}:""",
+Content to convey (in {lang}):
+{context}""",
             max_tokens=200,
             temperature=0.5
         )
-        return reply
     except:
         fallbacks = {
             "ENGLISH":  "Something went wrong. Please try again. - Mittu",
@@ -175,7 +172,6 @@ Write the reply now in {lang_instruction}:""",
             "MARATHI":  "Kahi problem aali. Punha try kara. - Mittu",
         }
         return fallbacks.get(language, fallbacks["ENGLISH"])
-
 
 # ─────────────────────────────────────────
 # JSON PARSER
