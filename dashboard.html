@@ -2,829 +2,336 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Mittu — Aapki Dukaan Ka Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600&display=swap" rel="stylesheet"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Mittu Dashboard</title>
 <style>
-  :root {
-    --bg:       #0D0F0E;
-    --surface:  #151917;
-    --card:     #1A1E1C;
-    --border:   #252B28;
-    --green:    #2ECC71;
-    --green-dim:#1A7A44;
-    --amber:    #F0A500;
-    --red:      #E05252;
-    --text:     #E8EDE9;
-    --muted:    #6B7A6E;
-    --accent:   #3DFF8F;
-    --radius:   14px;
-  }
-
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Sora', sans-serif;
-    min-height: 100vh;
-    overflow-x: hidden;
-  }
-
-  /* ── NOISE TEXTURE OVERLAY ── */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
-    pointer-events: none;
-    z-index: 0;
-  }
-
-  /* ── GLOW ORBS ── */
-  .orb {
-    position: fixed;
-    border-radius: 50%;
-    filter: blur(120px);
-    pointer-events: none;
-    z-index: 0;
-    opacity: 0.12;
-  }
-  .orb-1 { width: 500px; height: 500px; background: var(--green); top: -200px; right: -100px; }
-  .orb-2 { width: 400px; height: 400px; background: var(--amber); bottom: -150px; left: -100px; }
-
-  /* ── LAYOUT ── */
-  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px 80px; position: relative; z-index: 1; }
-
-  /* ── TOPBAR ── */
-  .topbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 28px 0 32px;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 32px;
-  }
-  .logo { display: flex; align-items: center; gap: 12px; }
-  .logo-icon {
-    width: 40px; height: 40px;
-    background: var(--accent);
-    border-radius: 10px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 20px;
-  }
-  .logo-name { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
-  .logo-sub  { font-size: 11px; color: var(--muted); margin-top: 1px; }
-
-  .shop-badge {
-    display: flex; align-items: center; gap: 10px;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 99px;
-    padding: 8px 16px;
-    font-size: 13px;
-  }
-  .shop-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 2s infinite; }
-  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(1.3)} }
-
-  .plan-chip {
-    font-size: 11px; font-weight: 600;
-    padding: 3px 10px; border-radius: 99px;
-    letter-spacing: 0.05em; text-transform: uppercase;
-  }
-  .plan-free    { background: #252B28; color: var(--muted); }
-  .plan-paid99  { background: #1A3A2A; color: var(--green); }
-  .plan-paid199 { background: #1A2E3A; color: #5BC8F5; }
-
-  /* ── SECTION LABEL ── */
-  .sec { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 14px; }
-
-  /* ── STAT CARDS ── */
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 32px; }
-
-  .stat-card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 20px;
-    position: relative;
-    overflow: hidden;
-    transition: transform .2s, border-color .2s;
-  }
-  .stat-card:hover { transform: translateY(-2px); border-color: #353D39; }
-  .stat-card::after {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-    border-radius: var(--radius) var(--radius) 0 0;
-  }
-  .stat-card.green::after  { background: var(--green); }
-  .stat-card.amber::after  { background: var(--amber); }
-  .stat-card.red::after    { background: var(--red); }
-  .stat-card.accent::after { background: var(--accent); }
-
-  .stat-label { font-size: 11px; color: var(--muted); margin-bottom: 10px; font-weight: 500; }
-  .stat-value { font-size: 28px; font-weight: 700; letter-spacing: -1px; line-height: 1; }
-  .stat-value.green  { color: var(--green); }
-  .stat-value.amber  { color: var(--amber); }
-  .stat-value.accent { color: var(--accent); }
-  .stat-sub   { font-size: 11px; color: var(--muted); margin-top: 6px; }
-
-  /* ── TABS ── */
-  .tabs { display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 4px; margin-bottom: 24px; width: fit-content; }
-  .tab {
-    padding: 8px 18px; border-radius: 7px; font-size: 13px; font-weight: 500;
-    cursor: pointer; color: var(--muted); border: none; background: transparent;
-    transition: all .2s; white-space: nowrap;
-  }
-  .tab.active { background: var(--card); color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,.4); }
-
-  /* ── PANEL ── */
-  .panel { display: none; animation: fadeIn .2s ease; }
-  .panel.active { display: block; }
-  @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
-
-  /* ── TABLE ── */
-  .table-wrap {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    overflow: hidden;
-  }
-  .table-head {
-    display: grid;
-    padding: 12px 20px;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    font-size: 11px; font-weight: 600; color: var(--muted);
-    letter-spacing: 0.06em; text-transform: uppercase;
-  }
-  .table-row {
-    display: grid;
-    padding: 14px 20px;
-    border-bottom: 1px solid var(--border);
-    font-size: 13px;
-    align-items: center;
-    transition: background .15s;
-  }
-  .table-row:last-child { border-bottom: none; }
-  .table-row:hover { background: #1E2320; }
-
-  .orders-grid { grid-template-columns: 1fr 2fr 1fr 80px; gap: 12px; }
-  .stock-grid  { grid-template-columns: 2fr 1fr 1fr 80px; gap: 12px; }
-  .udhaar-grid { grid-template-columns: 1fr 1fr 1fr 80px; gap: 12px; }
-  .sales-grid  { grid-template-columns: 2fr 1fr 1fr 1fr;  gap: 12px; }
-
-  .status-badge {
-    display: inline-flex; align-items: center; gap: 5px;
-    font-size: 11px; font-weight: 500;
-    padding: 3px 10px; border-radius: 99px;
-  }
-  .status-new      { background: #1A3A2A; color: var(--green); }
-  .status-pending  { background: #3A2A1A; color: var(--amber); }
-  .status-low      { background: #3A1A1A; color: var(--red); }
-  .status-ok       { background: #1A3A2A; color: var(--green); }
-
-  .empty-state {
-    padding: 48px 20px;
-    text-align: center;
-    color: var(--muted);
-    font-size: 13px;
-  }
-  .empty-icon { font-size: 32px; margin-bottom: 10px; }
-
-  /* ── UPGRADE CARD ── */
-  .upgrade-section { margin-top: 32px; }
-
-  .upgrade-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); gap: 14px; }
-
-  .plan-card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 24px;
-    position: relative;
-    transition: border-color .2s;
-  }
-  .plan-card.current { border-color: var(--green-dim); }
-  .plan-card.featured { border-color: #1A4A5A; }
-  .plan-card:hover { border-color: #353D39; }
-
-  .plan-price { font-size: 32px; font-weight: 700; letter-spacing: -1px; margin: 8px 0 4px; }
-  .plan-name  { font-size: 16px; font-weight: 600; }
-  .plan-sub   { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
-
-  .feat-list { list-style: none; display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
-  .feat-list li { display: flex; gap: 8px; font-size: 12px; align-items: flex-start; color: var(--text); }
-  .feat-list li::before { content: '✓'; color: var(--green); font-weight: 600; flex-shrink: 0; }
-  .feat-list li.locked { color: var(--muted); }
-  .feat-list li.locked::before { content: '—'; color: var(--muted); }
-
-  .btn {
-    width: 100%; padding: 12px;
-    border-radius: 10px;
-    font-size: 13px; font-weight: 600;
-    cursor: pointer; border: none;
-    transition: all .2s; letter-spacing: 0.02em;
-  }
-  .btn-ghost { background: var(--surface); color: var(--muted); border: 1px solid var(--border); }
-  .btn-green { background: var(--green); color: #0D0F0E; }
-  .btn-green:hover { background: var(--accent); transform: translateY(-1px); }
-  .btn-blue  { background: #1E5A7A; color: #5BC8F5; border: 1px solid #2A7A9A; }
-  .btn-blue:hover  { background: #2A7A9A; }
-
-  /* ── UPI MODAL ── */
-  .modal-overlay {
-    position: fixed; inset: 0;
-    background: rgba(0,0,0,.7);
-    backdrop-filter: blur(6px);
-    z-index: 100;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-  }
-  .modal-overlay.open { display: flex; }
-  .modal {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    padding: 32px;
-    max-width: 400px;
-    width: 100%;
-    position: relative;
-    animation: slideUp .25s ease;
-  }
-  @keyframes slideUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:none} }
-
-  .modal-close {
-    position: absolute; top: 16px; right: 16px;
-    width: 28px; height: 28px;
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 50%; display: flex; align-items: center;
-    justify-content: center; cursor: pointer; color: var(--muted);
-    font-size: 16px; line-height: 1;
-  }
-  .modal-title { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
-  .modal-sub   { font-size: 13px; color: var(--muted); margin-bottom: 24px; }
-
-  .upi-box {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 20px;
-    text-align: center;
-    margin-bottom: 16px;
-  }
-  .upi-amount { font-size: 36px; font-weight: 700; color: var(--green); letter-spacing: -1px; }
-  .upi-label  { font-size: 12px; color: var(--muted); margin-top: 4px; }
-
-  .upi-id-box {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 14px 16px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 16px;
-    font-size: 14px;
-    font-family: monospace;
-  }
-  .copy-btn {
-    font-size: 11px; padding: 4px 12px;
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 6px; cursor: pointer; color: var(--text);
-    transition: all .15s;
-  }
-  .copy-btn:hover { background: var(--card); }
-  .copy-btn.copied { background: var(--green-dim); color: var(--green); }
-
-  .steps { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
-  .step  { display: flex; gap: 10px; align-items: flex-start; font-size: 12px; color: var(--muted); }
-  .step-num {
-    width: 20px; height: 20px; border-radius: 50%;
-    background: var(--surface); border: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 10px; font-weight: 600; flex-shrink: 0;
-    color: var(--text);
-  }
-
-  .whatsapp-confirm {
-    display: flex; gap: 10px; align-items: center;
-    background: #1A2E1A; border: 1px solid #2A4A2A;
-    border-radius: 10px; padding: 12px 14px;
-    font-size: 12px; color: var(--green);
-  }
-
-  /* ── SALES CHART BAR ── */
-  .bar-wrap { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 14px; }
-  .bar-title { font-size: 14px; font-weight: 600; margin-bottom: 20px; }
-  .bars { display: flex; gap: 10px; align-items: flex-end; height: 120px; }
-  .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; }
-  .bar-fill {
-    width: 100%; background: var(--green-dim);
-    border-radius: 6px 6px 0 0;
-    transition: height .6s cubic-bezier(.34,1.56,.64,1);
-    position: relative;
-    min-height: 4px;
-  }
-  .bar-fill:hover { background: var(--green); }
-  .bar-fill::after {
-    content: attr(data-val);
-    position: absolute; top: -22px; left: 50%;
-    transform: translateX(-50%);
-    font-size: 10px; color: var(--muted);
-    white-space: nowrap;
-    opacity: 0; transition: opacity .2s;
-  }
-  .bar-fill:hover::after { opacity: 1; }
-  .bar-day { font-size: 10px; color: var(--muted); }
-
-  /* ── SCROLLBAR ── */
-  ::-webkit-scrollbar { width: 6px; }
-  ::-webkit-scrollbar-track { background: var(--bg); }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-
-  /* ── MOBILE ── */
-  @media(max-width:640px) {
-    .topbar { flex-direction: column; align-items: flex-start; gap: 14px; }
-    .orders-grid, .stock-grid, .udhaar-grid, .sales-grid { grid-template-columns: 1fr 1fr; }
-    .table-head { display: none; }
-    .stats { grid-template-columns: 1fr 1fr; }
-  }
+:root{--bg:#0D0F0E;--surf:#151917;--card:#1A1E1C;--bord:#252B28;--green:#2ECC71;--gdim:#1A7A44;--amber:#F0A500;--red:#E05252;--text:#E8EDE9;--muted:#6B7A6E;--accent:#3DFF8F;--rad:14px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',sans-serif;min-height:100vh}
+.wrap{max-width:1100px;margin:0 auto;padding:0 20px 80px}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:24px 0;border-bottom:1px solid var(--bord);margin-bottom:28px;flex-wrap:wrap;gap:12px}
+.logo{display:flex;align-items:center;gap:12px}
+.logo-icon{width:40px;height:40px;background:var(--accent);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px}
+.logo-name{font-size:20px;font-weight:700}.logo-sub{font-size:11px;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.plan-chip{font-size:11px;font-weight:600;padding:3px 10px;border-radius:99px;text-transform:uppercase}
+.free{background:#252B28;color:var(--muted)}.p99{background:#1A3A2A;color:var(--green)}.p199{background:#1A2E3A;color:#5BC8F5}
+.sec{font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:12px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:28px}
+.stat-card{background:var(--card);border:1px solid var(--bord);border-radius:var(--rad);padding:18px;position:relative;overflow:hidden}
+.stat-card::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;border-radius:var(--rad) var(--rad) 0 0}
+.g::after{background:var(--green)}.a::after{background:var(--amber)}.r::after{background:var(--red)}.ac::after{background:var(--accent)}
+.stat-lbl{font-size:11px;color:var(--muted);margin-bottom:8px}.stat-val{font-size:26px;font-weight:700;letter-spacing:-1px}.stat-sub{font-size:11px;color:var(--muted);margin-top:4px}
+.col-green{color:var(--green)}.col-amber{color:var(--amber)}.col-red{color:var(--red)}.col-accent{color:var(--accent)}
+.tabs{display:flex;gap:4px;background:var(--surf);border:1px solid var(--bord);border-radius:10px;padding:4px;margin-bottom:22px;width:fit-content;flex-wrap:wrap}
+.tab{padding:7px 16px;border-radius:7px;font-size:13px;font-weight:500;cursor:pointer;color:var(--muted);border:none;background:transparent;transition:all .2s}
+.tab.active{background:var(--card);color:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.panel{display:none}.panel.active{display:block;animation:fadeIn .2s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.tbl{background:var(--card);border:1px solid var(--bord);border-radius:var(--rad);overflow:hidden}
+.tbl-head{display:grid;padding:10px 18px;background:var(--surf);border-bottom:1px solid var(--bord);font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.05em;text-transform:uppercase}
+.tbl-row{display:grid;padding:13px 18px;border-bottom:1px solid var(--bord);font-size:13px;align-items:center;transition:background .15s}
+.tbl-row:last-child{border-bottom:none}.tbl-row:hover{background:#1E2320}
+.og{grid-template-columns:1fr 2fr 1fr 80px;gap:12px}
+.ug{grid-template-columns:1fr 1fr 1fr 80px;gap:12px}
+.remg{grid-template-columns:90px 2fr 1fr 80px;gap:12px}
+.badge{display:inline-flex;align-items:center;font-size:11px;padding:3px 9px;border-radius:99px}
+.b-new{background:#1A3A2A;color:var(--green)}.b-pend{background:#3A2A1A;color:var(--amber)}
+.b-ok{background:#1A3A2A;color:var(--green)}.b-low{background:#3A1A1A;color:var(--red)}
+.empty{padding:44px;text-align:center;color:var(--muted);font-size:13px}
+.empty-icon{font-size:28px;margin-bottom:8px}
+.plan-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.plan-card{background:var(--card);border:1px solid var(--bord);border-radius:var(--rad);padding:22px;transition:border-color .2s}
+.plan-card.current{border-color:var(--gdim)}.plan-card.featured{border-color:#1A4A5A}
+.plan-price{font-size:28px;font-weight:700;letter-spacing:-1px;margin:6px 0 3px}
+.plan-name{font-size:15px;font-weight:600}.plan-sub{font-size:12px;color:var(--muted);margin-bottom:16px}
+.feat-list{list-style:none;display:flex;flex-direction:column;gap:7px;margin-bottom:18px}
+.feat-list li{display:flex;gap:8px;font-size:12px;color:var(--text)}
+.feat-list li::before{content:'✓';color:var(--green);font-weight:600;flex-shrink:0}
+.feat-list li.no{color:var(--muted)}.feat-list li.no::before{content:'—';color:var(--muted)}
+.btn{width:100%;padding:10px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .2s}
+.btn-ghost{background:var(--surf);color:var(--muted);border:1px solid var(--bord)}
+.btn-green{background:var(--green);color:#0D0F0E}.btn-green:hover{background:var(--accent);transform:translateY(-1px)}
+.btn-blue{background:#1E5A7A;color:#5BC8F5;border:1px solid #2A7A9A}.btn-blue:hover{background:#2A7A9A}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(6px);z-index:100;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-bg.open{display:flex}
+.modal{background:var(--card);border:1px solid var(--bord);border-radius:20px;padding:28px;max-width:400px;width:100%;position:relative;animation:slideUp .25s ease}
+@keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+.modal-close{position:absolute;top:14px;right:14px;width:26px;height:26px;background:var(--surf);border:1px solid var(--bord);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);font-size:15px}
+.modal-title{font-size:18px;font-weight:700;margin-bottom:4px}.modal-sub{font-size:13px;color:var(--muted);margin-bottom:20px}
+.upi-box{background:var(--surf);border:1px solid var(--bord);border-radius:10px;padding:18px;text-align:center;margin-bottom:14px}
+.upi-amount{font-size:32px;font-weight:700;color:var(--green);letter-spacing:-1px}.upi-lbl{font-size:12px;color:var(--muted);margin-top:3px}
+.upi-id-row{display:flex;align-items:center;justify-content:space-between;background:var(--bg);border:1px solid var(--bord);border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;font-family:monospace}
+.copy-btn{font-size:11px;padding:3px 10px;background:var(--surf);border:1px solid var(--bord);border-radius:5px;cursor:pointer;color:var(--text);transition:all .15s}
+.copy-btn.done{background:var(--gdim);color:var(--green)}
+.steps-list{display:flex;flex-direction:column;gap:7px;margin-bottom:16px}
+.step{display:flex;gap:9px;align-items:flex-start;font-size:12px;color:var(--muted)}
+.snum{width:18px;height:18px;border-radius:50%;background:var(--surf);border:1px solid var(--bord);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;flex-shrink:0;color:var(--text)}
+.wa-box{display:flex;gap:9px;align-items:center;background:#1A2E1A;border:1px solid #2A4A2A;border-radius:9px;padding:10px 12px;font-size:12px;color:var(--green);margin-bottom:12px}
 </style>
 </head>
 <body>
-
-<div class="orb orb-1"></div>
-<div class="orb orb-2"></div>
-
 <div class="wrap">
 
-  <!-- TOPBAR -->
-  <div class="topbar">
-    <div class="logo">
-      <div class="logo-icon">🛒</div>
-      <div>
-        <div class="logo-name">Mittu</div>
-        <div class="logo-sub">Aapki dukaan ka WhatsApp assistant</div>
-      </div>
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-icon">🛒</div>
+    <div><div class="logo-name">Mittu</div><div class="logo-sub">Aapki dukaan ka WhatsApp assistant</div></div>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <div class="dot"></div>
+    <span id="shop-name" style="font-size:14px">Loading...</span>
+    <span id="plan-chip" class="plan-chip free">Free</span>
+    <button onclick="init()" style="font-size:11px;padding:4px 10px;border-radius:6px;background:var(--surf);border:1px solid var(--bord);color:var(--muted);cursor:pointer">↻ Refresh</button>
+  </div>
+</div>
+
+<p class="sec">Aaj ka snapshot</p>
+<div class="stats">
+  <div class="stat-card g"><div class="stat-lbl">Today Orders</div><div class="stat-val col-green" id="s-ord">—</div><div class="stat-sub" id="s-ord-s">Loading...</div></div>
+  <div class="stat-card ac"><div class="stat-lbl">Today Revenue</div><div class="stat-val col-accent" id="s-rev">—</div><div class="stat-sub" id="s-rev-s">Loading...</div></div>
+  <div class="stat-card a"><div class="stat-lbl">Pending Udhaar</div><div class="stat-val col-amber" id="s-udh">—</div><div class="stat-sub" id="s-udh-s">Loading...</div></div>
+  <div class="stat-card r"><div class="stat-lbl">Pending Reminders</div><div class="stat-val col-red" id="s-rem">—</div><div class="stat-sub" id="s-rem-s">Loading...</div></div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="show('orders',this)">📦 Orders</button>
+  <button class="tab" onclick="show('udhaar',this)">📒 Udhaar</button>
+  <button class="tab" onclick="show('reminders',this)">⏰ Reminders</button>
+  <button class="tab" onclick="show('upgrade',this)">⬆ Upgrade</button>
+</div>
+
+<div id="p-orders" class="panel active">
+  <div class="tbl">
+    <div class="tbl-head og"><span>Customer</span><span>Items</span><span>Amount</span><span>Status</span></div>
+    <div id="orders-body"><div class="empty"><div class="empty-icon">📦</div>Loading...</div></div>
+  </div>
+</div>
+
+<div id="p-udhaar" class="panel">
+  <div class="tbl">
+    <div class="tbl-head ug"><span>Customer</span><span>Amount</span><span>Description</span><span>Status</span></div>
+    <div id="udhaar-body"><div class="empty"><div class="empty-icon">📒</div>Loading...</div></div>
+  </div>
+</div>
+
+<div id="p-reminders" class="panel">
+  <div class="tbl">
+    <div class="tbl-head remg"><span>Type</span><span>Message</span><span>Scheduled (IST)</span><span>Status</span></div>
+    <div id="reminders-body"><div class="empty"><div class="empty-icon">⏰</div>Loading...</div></div>
+  </div>
+</div>
+
+<div id="p-upgrade" class="panel">
+  <div class="plan-grid">
+    <div class="plan-card" id="c-free">
+      <span class="plan-chip free" style="display:inline-block;margin-bottom:10px">Free</span>
+      <div class="plan-name">Shuruat</div>
+      <div class="plan-price">Rs 0</div>
+      <div class="plan-sub">Free forever</div>
+      <ul class="feat-list">
+        <li>10 orders/day</li><li>Hindi + English</li><li>Basic report</li>
+        <li class="no">Revenue report</li><li class="no">Udhaar</li><li class="no">Reminders</li>
+      </ul>
+      <button class="btn btn-ghost" disabled>Current plan</button>
     </div>
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-      <div class="shop-badge">
-        <div class="shop-dot"></div>
-        <span id="shop-name-display">Loading...</span>
-      </div>
-      <span class="plan-chip plan-free" id="plan-chip">Free</span>
+    <div class="plan-card" id="c-99">
+      <span class="plan-chip p99" style="display:inline-block;margin-bottom:10px">Most popular</span>
+      <div class="plan-name">Chota Boss</div>
+      <div class="plan-price" style="color:var(--green)">Rs 99</div>
+      <div class="plan-sub">Per month · Cancel anytime</div>
+      <ul class="feat-list">
+        <li>Unlimited orders</li><li>Revenue + weekly report</li>
+        <li>Udhaar — 5 customers</li><li>Reminders</li>
+        <li class="no">Gujarati + Marathi</li><li class="no">GST invoice</li>
+      </ul>
+      <button class="btn btn-green" onclick="openUpgrade(99)">Upgrade — Rs 99/mo</button>
+    </div>
+    <div class="plan-card featured" id="c-199">
+      <span class="plan-chip p199" style="display:inline-block;margin-bottom:10px">Best value ⭐</span>
+      <div class="plan-name">Asli Boss</div>
+      <div class="plan-price" style="color:#5BC8F5">Rs 199</div>
+      <div class="plan-sub">Per month · Cancel anytime</div>
+      <ul class="feat-list">
+        <li>Everything in Rs 99</li><li>Gujarati + Marathi</li>
+        <li>Unlimited udhaar</li><li>Stock management</li>
+        <li>GST invoice</li><li>Priority support</li>
+      </ul>
+      <button class="btn btn-blue" onclick="openUpgrade(199)">Upgrade — Rs 199/mo</button>
     </div>
   </div>
-
-  <!-- STATS ROW -->
-  <div class="sec">Aaj ka snapshot</div>
-  <div class="stats">
-    <div class="stat-card green">
-      <div class="stat-label">Aaj ke orders</div>
-      <div class="stat-value green" id="stat-orders">—</div>
-      <div class="stat-sub" id="stat-orders-sub">Loading...</div>
-    </div>
-    <div class="stat-card accent">
-      <div class="stat-label">Aaj ki kamai</div>
-      <div class="stat-value accent" id="stat-revenue">—</div>
-      <div class="stat-sub" id="stat-revenue-sub">Free plan — upgrade for revenue</div>
-    </div>
-    <div class="stat-card amber">
-      <div class="stat-label">Pending udhaar</div>
-      <div class="stat-value amber" id="stat-udhaar">—</div>
-      <div class="stat-sub" id="stat-udhaar-sub">Loading...</div>
-    </div>
-    <div class="stat-card red">
-      <div class="stat-label">Low stock items</div>
-      <div class="stat-value" style="color:var(--red)" id="stat-stock">—</div>
-      <div class="stat-sub" id="stat-stock-sub">Loading...</div>
-    </div>
+  <div style="margin-top:14px;padding:14px 18px;background:var(--surf);border:1px solid var(--bord);border-radius:10px;font-size:12px;color:var(--muted);text-align:center">
+    Sab plans mein — sirf WhatsApp · Hindi + English · Aapka data India mein · Cancel anytime on WhatsApp
   </div>
+</div>
 
-  <!-- TABS -->
-  <div class="tabs">
-    <button class="tab active" onclick="switchTab('orders',this)">📦 Orders</button>
-    <button class="tab" onclick="switchTab('sales',this)">📊 Sales</button>
-    <button class="tab" onclick="switchTab('stock',this)">🏪 Stock</button>
-    <button class="tab" onclick="switchTab('udhaar',this)">📒 Udhaar</button>
-    <button class="tab" onclick="switchTab('upgrade',this)">⬆ Upgrade</button>
-  </div>
+</div>
 
-  <!-- ORDERS PANEL -->
-  <div id="panel-orders" class="panel active">
-    <div class="table-wrap">
-      <div class="table-head orders-grid">
-        <span>Customer</span><span>Items</span><span>Amount</span><span>Status</span>
-      </div>
-      <div id="orders-list">
-        <div class="empty-state"><div class="empty-icon">📦</div>Loading orders...</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- SALES PANEL -->
-  <div id="panel-sales" class="panel">
-    <div class="bar-wrap">
-      <div class="bar-title">Pichhle 7 din ki kamai (Rs)</div>
-      <div class="bars" id="sales-bars">
-        <div class="bar-col"><div class="bar-fill" style="height:20%" data-val="Rs 0"></div><div class="bar-day">Mon</div></div>
-        <div class="bar-col"><div class="bar-fill" style="height:20%" data-val="Rs 0"></div><div class="bar-day">Tue</div></div>
-        <div class="bar-col"><div class="bar-fill" style="height:20%" data-val="Rs 0"></div><div class="bar-day">Wed</div></div>
-        <div class="bar-col"><div class="bar-fill" style="height:20%" data-val="Rs 0"></div><div class="bar-day">Thu</div></div>
-        <div class="bar-col"><div class="bar-fill" style="height:20%" data-val="Rs 0"></div><div class="bar-day">Fri</div></div>
-        <div class="bar-col"><div class="bar-fill" style="height:20%" data-val="Rs 0"></div><div class="bar-day">Sat</div></div>
-        <div class="bar-col"><div class="bar-fill" style="height:100%" data-val="Today"></div><div class="bar-day">Today</div></div>
-      </div>
-    </div>
-    <div class="table-wrap">
-      <div class="table-head sales-grid">
-        <span>Item</span><span>Qty sold</span><span>Revenue</span><span>Date</span>
-      </div>
-      <div id="sales-list">
-        <div class="empty-state"><div class="empty-icon">📊</div>No sales data yet. Orders via WhatsApp will appear here.</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- STOCK PANEL -->
-  <div id="panel-stock" class="panel">
-    <div class="table-wrap">
-      <div class="table-head stock-grid">
-        <span>Item</span><span>Quantity</span><span>Alert at</span><span>Status</span>
-      </div>
-      <div id="stock-list">
-        <div class="empty-state"><div class="empty-icon">🏪</div>Loading stock...</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- UDHAAR PANEL -->
-  <div id="panel-udhaar" class="panel">
-    <div class="table-wrap">
-      <div class="table-head udhaar-grid">
-        <span>Customer</span><span>Amount</span><span>Description</span><span>Status</span>
-      </div>
-      <div id="udhaar-list">
-        <div class="empty-state"><div class="empty-icon">📒</div>Udhaar tracking available on Rs 99+ plan.</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- UPGRADE PANEL -->
-  <div id="panel-upgrade" class="panel">
-    <div class="upgrade-grid">
-
-      <!-- FREE -->
-      <div class="plan-card current" id="card-free">
-        <div class="plan-chip plan-free" style="display:inline-block;margin-bottom:10px;">Current plan</div>
-        <div class="plan-name">Shuruat</div>
-        <div class="plan-price">Rs 0</div>
-        <div class="plan-sub">Free forever</div>
-        <ul class="feat-list">
-          <li>10 orders per day</li>
-          <li>3 stock items</li>
-          <li>Basic order count</li>
-          <li class="locked">Revenue report</li>
-          <li class="locked">Udhaar tracking</li>
-          <li class="locked">Google Sheet sync</li>
-        </ul>
-        <button class="btn btn-ghost" disabled>Current plan</button>
-      </div>
-
-      <!-- RS 99 -->
-      <div class="plan-card" id="card-99">
-        <div class="plan-chip plan-paid99" style="display:inline-block;margin-bottom:10px;">Most popular</div>
-        <div class="plan-name">Chota Boss</div>
-        <div class="plan-price" style="color:var(--green)">Rs 99</div>
-        <div class="plan-sub">Per month</div>
-        <ul class="feat-list">
-          <li>Unlimited orders</li>
-          <li>Unlimited stock items</li>
-          <li>Revenue + weekly report</li>
-          <li>Udhaar — 5 customers</li>
-          <li>Google Sheet sync</li>
-          <li class="locked">GST invoice</li>
-        </ul>
-        <button class="btn btn-green" onclick="openUpgrade(99)">Upgrade — Rs 99/mo</button>
-      </div>
-
-      <!-- RS 199 -->
-      <div class="plan-card featured" id="card-199">
-        <div class="plan-chip" style="background:#1A3A4A;color:#5BC8F5;display:inline-block;margin-bottom:10px;">Best value ⭐</div>
-        <div class="plan-name">Asli Boss</div>
-        <div class="plan-price" style="color:#5BC8F5">Rs 199</div>
-        <div class="plan-sub">Per month</div>
-        <ul class="feat-list">
-          <li>Everything in Rs 99</li>
-          <li>Unlimited udhaar</li>
-          <li>GST invoice on WhatsApp</li>
-          <li>Monthly profit report</li>
-          <li>Priority support</li>
-          <li>India ka apna AI ✦</li>
-        </ul>
-        <button class="btn btn-blue" onclick="openUpgrade(199)">Upgrade — Rs 199/mo</button>
-      </div>
-
-    </div>
-
-    <div style="margin-top:20px;padding:16px 20px;background:var(--surface);border:1px solid var(--border);border-radius:12px;font-size:12px;color:var(--muted);text-align:center;">
-      Sab plans mein — sirf WhatsApp, koi app nahi &nbsp;·&nbsp; Hindi + Gujarati + English &nbsp;·&nbsp; Aapka data India mein rehta hai
-    </div>
-  </div>
-
-</div><!-- end wrap -->
-
-<!-- UPI MODAL -->
-<div class="modal-overlay" id="modal">
+<!-- UPGRADE MODAL -->
+<div class="modal-bg" id="modal">
   <div class="modal">
     <div class="modal-close" onclick="closeModal()">×</div>
-    <div class="modal-title" id="modal-title">Upgrade to Rs 99</div>
-    <div class="modal-sub">Sirf UPI se pay karo — 2 minute mein activate</div>
-
+    <div class="modal-title" id="m-title">Upgrade to Rs 99</div>
+    <div class="modal-sub">Pay via UPI — activate in 2 minutes</div>
     <div class="upi-box">
-      <div class="upi-amount" id="modal-amount">Rs 99</div>
-      <div class="upi-label">One time monthly payment</div>
+      <div class="upi-amount" id="m-amount">Rs 99</div>
+      <div class="upi-lbl">One-time monthly payment</div>
     </div>
-
-    <div style="font-size:11px;color:var(--muted);margin-bottom:8px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;">UPI ID</div>
-    <div class="upi-id-box">
+    <div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:600;letter-spacing:.05em;text-transform:uppercase">Your UPI ID</div>
+    <div class="upi-id-row">
       <span id="upi-id-text">mittu@upi</span>
       <button class="copy-btn" id="copy-btn" onclick="copyUPI()">Copy</button>
     </div>
-
-    <div class="steps">
-      <div class="step"><div class="step-num">1</div><span>UPI app kholo — GPay, PhonePe, Paytm</span></div>
-      <div class="step"><div class="step-num">2</div><span>UPI ID pe pay karo — amount <span id="step-amount">Rs 99</span></span></div>
-      <div class="step"><div class="step-num">3</div><span>Screenshot WhatsApp pe bhejo</span></div>
+    <div class="steps-list">
+      <div class="step"><div class="snum">1</div><span>Open GPay / PhonePe / Paytm</span></div>
+      <div class="step"><div class="snum">2</div><span>Pay <span id="m-step-amt">Rs 99</span> to the UPI ID above</span></div>
+      <div class="step"><div class="snum">3</div><span>Send payment screenshot on WhatsApp</span></div>
     </div>
-
-    <div class="whatsapp-confirm">
+    <div class="wa-box">
       <span>📱</span>
-      <span>Payment ke baad Mittu ko WhatsApp karo: <strong>"Plan upgrade kiya Rs <span id="plan-amount-text">99</span>"</strong></span>
+      <span>After paying, message Mittu: <strong>"Plan upgrade kiya Rs <span id="m-plan-num">99</span>"</strong></span>
     </div>
-
-    <button class="btn btn-green" style="margin-top:16px;" onclick="openWhatsApp()">
-      WhatsApp pe confirm karo →
-    </button>
+    <button class="btn btn-green" onclick="openWA()">Open WhatsApp to confirm →</button>
   </div>
 </div>
 
 <script>
-// ── CONFIG — update these before deploying ──
-const SUPABASE_URL    = 'https://hcwdrydokdvqfrvynnkk.supabase.co';      // from Supabase settings
-const SUPABASE_KEY    = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhjd2RyeWRva2R2cWZydnlubmtrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4ODAyMjAsImV4cCI6MjA5MTQ1NjIyMH0.NXoUFBYGlfsclv2KxJpV7TjROg90auKv2HHKdhQLkbA'; // anonymous key
-const SHOP_PHONE      = '+919537187123';           // owner WhatsApp number
-const OWNER_UPI_ID    = 'jinaljoshi6@okhdfc';            // your UPI ID
-const MITTU_WHATSAPP  = '+14155238886';            // Twilio sandbox number
+// ══════════════════════════════════════════
+// CONFIG — Update these 4 values
+// ══════════════════════════════════════════
+const SB_URL  = 'YOUR_SUPABASE_URL';        // e.g. https://abcxyz.supabase.co
+const SB_KEY  = 'YOUR_SUPABASE_ANON_KEY';   // eyJxxxxxxxxx
+const PHONE   = 'YOUR_PHONE_NO_PLUS';       // e.g. 919537187123 (no + sign)
+const UPI_ID  = 'YOUR_UPI_ID';              // e.g. jinal@paytm
+const WA_NUM  = '14155238886';              // Twilio number (no +)
+// ══════════════════════════════════════════
 
-// ── API HELPER ──
-async function supabase(table, query='') {
-  const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/${table}${query}`,
-    { headers: {
-        'apikey': SUPABASE_KEY,
-        'Authorization': `Bearer ${SUPABASE_KEY}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'count=exact'
-    }}
-  );
-  return res.json();
+async function api(table, qs='') {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}${qs}`,{
+    headers:{
+      'apikey':SB_KEY,
+      'Authorization':`Bearer ${SB_KEY}`,
+      'Prefer':'count=exact'
+    }
+  });
+  if(!r.ok) return [];
+  return r.json();
 }
 
-// ── LOAD SHOP ──
+let shopId = null;
+
 async function loadShop() {
-  const data = await supabase('shops',
-    `?phone=eq.${encodeURIComponent(SHOP_PHONE)}&select=*`);
-  if (!data || !data.length) return null;
-  const shop = data[0];
-
-  document.getElementById('shop-name-display').textContent =
-    shop.name || 'Your Shop';
-
-  const chip = document.getElementById('plan-chip');
-  if (shop.plan === 'plan199') {
-    chip.textContent = 'Asli Boss';
-    chip.className = 'plan-chip plan-paid199';
-  } else if (shop.plan === 'plan99') {
-    chip.textContent = 'Chota Boss';
-    chip.className = 'plan-chip plan-paid99';
-  } else {
-    chip.textContent = 'Free';
-    chip.className = 'plan-chip plan-free';
+  const rows = await api('shops',`?phone=eq.${encodeURIComponent(PHONE)}&select=*`);
+  if (!rows?.length) {
+    document.getElementById('shop-name').textContent = 'Shop not found — check PHONE config';
+    return null;
   }
-
-  // Highlight current plan card
-  document.querySelectorAll('.plan-card').forEach(c => c.classList.remove('current'));
-  if (shop.plan === 'plan199') document.getElementById('card-199').classList.add('current');
-  else if (shop.plan === 'plan99') document.getElementById('card-99').classList.add('current');
-  else document.getElementById('card-free').classList.add('current');
-
-  return shop;
+  const s = rows[0];
+  shopId   = s.id;
+  document.getElementById('shop-name').textContent = s.name || 'Your Shop';
+  const chip  = document.getElementById('plan-chip');
+  const plans = {plan199:['Asli Boss','p199'],plan99:['Chota Boss','p99'],free:['Free','free']};
+  const [lbl,cls] = plans[s.plan] || ['Free','free'];
+  chip.textContent = lbl; chip.className = `plan-chip ${cls}`;
+  document.querySelectorAll('.plan-card').forEach(c=>c.classList.remove('current'));
+  const cm = {plan199:'c-199',plan99:'c-99',free:'c-free'};
+  document.getElementById(cm[s.plan]||'c-free')?.classList.add('current');
+  return s;
 }
 
-// ── LOAD ORDERS ──
-async function loadOrders(shopId) {
+async function loadOrders() {
   const today = new Date().toISOString().split('T')[0];
-  const data  = await supabase('orders',
-    `?shop_id=eq.${shopId}&created_at=gte.${today}&order=created_at.desc&select=*`);
-
-  const total   = data ? data.length : 0;
-  const revenue = data ? data.reduce((s,o) => s + parseFloat(o.amount||0), 0) : 0;
-
-  document.getElementById('stat-orders').textContent = total;
-  document.getElementById('stat-orders-sub').textContent =
-    total === 1 ? '1 order aaj' : `${total} orders aaj`;
-
-  document.getElementById('stat-revenue').textContent = `Rs ${revenue.toFixed(0)}`;
-  document.getElementById('stat-revenue-sub').textContent =
-    revenue > 0 ? 'Aaj ki total kamai' : 'Koi amount add nahi hua';
-
-  const list = document.getElementById('orders-list');
-  if (!data || !data.length) {
-    list.innerHTML = `<div class="empty-state"><div class="empty-icon">📦</div>Aaj koi order nahi. WhatsApp pe Mittu ko order bhejo.</div>`;
-    return;
-  }
-
-  list.innerHTML = data.map(o => `
-    <div class="table-row orders-grid">
-      <span style="font-weight:500">${o.customer_name}</span>
-      <span style="color:var(--muted)">${o.items}</span>
-      <span style="color:var(--accent)">${o.amount > 0 ? 'Rs '+parseFloat(o.amount).toFixed(2) : '—'}</span>
-      <span><span class="status-badge status-new">New</span></span>
+  const rows  = await api('orders',`?shop_id=eq.${shopId}&created_at=gte.${today}&order=created_at.desc&select=*`);
+  const total = rows?.length || 0;
+  const rev   = rows?.reduce((s,o)=>s+parseFloat(o.amount||0),0)||0;
+  document.getElementById('s-ord').textContent   = total;
+  document.getElementById('s-ord-s').textContent = `${total} order${total!==1?'s':''} today`;
+  document.getElementById('s-rev').textContent   = `Rs ${rev.toFixed(0)}`;
+  document.getElementById('s-rev-s').textContent = rev>0?'Today revenue':'No amounts added yet';
+  const el = document.getElementById('orders-body');
+  if (!rows?.length) { el.innerHTML='<div class="empty"><div class="empty-icon">📦</div>No orders today. Send an order via WhatsApp.</div>'; return; }
+  el.innerHTML = rows.map(o=>`
+    <div class="tbl-row og">
+      <span style="font-weight:500">${o.customer_name||'?'}</span>
+      <span style="color:var(--muted);font-size:12px">${o.items||'?'}</span>
+      <span style="color:var(--accent)">${o.amount>0?'Rs '+parseFloat(o.amount).toFixed(0):'—'}</span>
+      <span><span class="badge b-new">${o.status||'new'}</span></span>
     </div>`).join('');
 }
 
-// ── LOAD STOCK ──
-async function loadStock(shopId) {
-  const data = await supabase('stock',
-    `?shop_id=eq.${shopId}&select=*&order=quantity.asc`);
+async function loadUdhaar() {
+  const rows  = await api('udhaar',`?shop_id=eq.${shopId}&status=eq.pending&select=*&order=created_at.desc`);
+  const total = rows?.reduce((s,u)=>s+parseFloat(u.amount||0),0)||0;
+  document.getElementById('s-udh').textContent   = `Rs ${total.toFixed(0)}`;
+  document.getElementById('s-udh-s').textContent = rows?.length?`${rows.length} customer${rows.length!==1?'s':''} pending`:'No pending udhaar';
+  const el = document.getElementById('udhaar-body');
+  if (!rows?.length) { el.innerHTML='<div class="empty"><div class="empty-icon">📒</div>No pending udhaar. </div>'; return; }
+  el.innerHTML = rows.map(u=>`
+    <div class="tbl-row ug">
+      <span style="font-weight:500">${u.customer_name}</span>
+      <span style="color:var(--amber)">Rs ${parseFloat(u.amount).toFixed(0)}</span>
+      <span style="color:var(--muted);font-size:12px">${u.description||'—'}</span>
+      <span><span class="badge b-pend">Pending</span></span>
+    </div>`).join('');
+}
 
-  const low = data ? data.filter(s => parseFloat(s.quantity) <= parseFloat(s.low_alert_at||2)).length : 0;
-  document.getElementById('stat-stock').textContent = low;
-  document.getElementById('stat-stock-sub').textContent =
-    low > 0 ? `${low} item${low>1?'s':''} low ya khatam` : 'Sab theek hai';
-
-  const list = document.getElementById('stock-list');
-  if (!data || !data.length) {
-    list.innerHTML = `<div class="empty-state"><div class="empty-icon">🏪</div>Koi stock nahi. WhatsApp pe Mittu ko batao kya kya hai.</div>`;
-    return;
-  }
-
-  list.innerHTML = data.map(s => {
-    const qty  = parseFloat(s.quantity);
-    const alrt = parseFloat(s.low_alert_at||2);
-    const isLow = qty <= alrt;
-    return `
-    <div class="table-row stock-grid">
-      <span style="font-weight:500">${s.item_name}</span>
-      <span style="color:${isLow?'var(--red)':'var(--text)'}">${qty}</span>
-      <span style="color:var(--muted)">${alrt}</span>
-      <span><span class="status-badge ${isLow?'status-low':'status-ok'}">${isLow?'⚠ Low':'✓ OK'}</span></span>
+async function loadReminders() {
+  const rows    = await api('reminders',`?shop_id=eq.${shopId}&order=remind_at.asc&select=*`);
+  const pending = rows?.filter(r=>r.status==='pending').length||0;
+  document.getElementById('s-rem').textContent   = pending;
+  document.getElementById('s-rem-s').textContent = pending>0?`${pending} upcoming`:'No reminders set';
+  const el = document.getElementById('reminders-body');
+  if (!rows?.length) { el.innerHTML='<div class="empty"><div class="empty-icon">⏰</div>No reminders. Tell Mittu: "Remind me about milk tomorrow at 9am"</div>'; return; }
+  const sc = {pending:'b-pend',sent:'b-ok',failed:'b-low'};
+  el.innerHTML = rows.map(r=>{
+    // Convert UTC to IST for display
+    const utc = new Date(r.remind_at);
+    const ist = new Date(utc.getTime()+(5.5*60*60*1000));
+    const ts  = ist.toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:true});
+    return `<div class="tbl-row remg">
+      <span style="font-weight:500;text-transform:capitalize">${r.reminder_type}</span>
+      <span style="color:var(--muted);font-size:12px">${r.message||'—'}</span>
+      <span style="font-size:12px;color:var(--muted)">${ts}</span>
+      <span><span class="badge ${sc[r.status]||'b-pend'}">${r.status}</span></span>
     </div>`;}).join('');
 }
 
-// ── LOAD UDHAAR ──
-async function loadUdhaar(shopId) {
-  const data = await supabase('udhaar',
-    `?shop_id=eq.${shopId}&status=eq.pending&select=*&order=created_at.desc`);
-
-  const total = data ? data.reduce((s,u) => s + parseFloat(u.amount||0), 0) : 0;
-  document.getElementById('stat-udhaar').textContent = `Rs ${total.toFixed(0)}`;
-  document.getElementById('stat-udhaar-sub').textContent =
-    data && data.length ? `${data.length} customer${data.length>1?'s':''} pending` : 'Koi udhaar nahi';
-
-  const list = document.getElementById('udhaar-list');
-  if (!data || !data.length) {
-    list.innerHTML = `<div class="empty-state"><div class="empty-icon">📒</div>Koi pending udhaar nahi. Badiya!</div>`;
-    return;
-  }
-
-  list.innerHTML = data.map(u => `
-    <div class="table-row udhaar-grid">
-      <span style="font-weight:500">${u.customer_name}</span>
-      <span style="color:var(--amber)">Rs ${parseFloat(u.amount).toFixed(2)}</span>
-      <span style="color:var(--muted)">${u.description||'—'}</span>
-      <span><span class="status-badge status-pending">Pending</span></span>
-    </div>`).join('');
-}
-
-// ── LOAD SALES ──
-async function loadSales(shopId) {
-  // Get last 7 days of orders for chart
-  const d7 = new Date();
-  d7.setDate(d7.getDate() - 6);
-  const data = await supabase('orders',
-    `?shop_id=eq.${shopId}&created_at=gte.${d7.toISOString().split('T')[0]}&select=*&order=created_at.asc`);
-
-  if (!data || !data.length) {
-    document.getElementById('sales-list').innerHTML =
-      `<div class="empty-state"><div class="empty-icon">📊</div>Koi sales data nahi abhi tak.</div>`;
-    return;
-  }
-
-  // Group by date
-  const byDate = {};
-  data.forEach(o => {
-    const d = o.created_at.split('T')[0];
-    byDate[d] = (byDate[d]||0) + parseFloat(o.amount||0);
-  });
-
-  // Update bars
-  const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-  const vals  = Object.values(byDate);
-  const maxV  = Math.max(...vals, 1);
-  const bars  = document.getElementById('sales-bars');
-  const keys  = Object.keys(byDate);
-
-  bars.innerHTML = keys.map((d,i) => {
-    const v   = byDate[d];
-    const pct = Math.max((v/maxV)*100, 4);
-    const day = new Date(d).toLocaleDateString('en',{weekday:'short'});
-    return `
-    <div class="bar-col">
-      <div class="bar-fill" style="height:${pct}%" data-val="Rs ${v.toFixed(0)}"></div>
-      <div class="bar-day">${day}</div>
-    </div>`;
-  }).join('');
-
-  // Sales list
-  document.getElementById('sales-list').innerHTML = data.map(o => `
-    <div class="table-row sales-grid">
-      <span style="font-weight:500">${o.items}</span>
-      <span style="color:var(--muted)">1</span>
-      <span style="color:var(--accent)">${o.amount>0?'Rs '+parseFloat(o.amount).toFixed(2):'—'}</span>
-      <span style="color:var(--muted)">${o.created_at.split('T')[0]}</span>
-    </div>`).join('');
-}
-
-// ── TAB SWITCHER ──
-function switchTab(name, el) {
-  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.getElementById('panel-'+name).classList.add('active');
+function show(name,el) {
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('p-'+name).classList.add('active');
   el.classList.add('active');
 }
 
-// ── UPGRADE MODAL ──
 function openUpgrade(plan) {
-  document.getElementById('modal-title').textContent  = `Upgrade to Rs ${plan}`;
-  document.getElementById('modal-amount').textContent = `Rs ${plan}`;
-  document.getElementById('step-amount').textContent  = `Rs ${plan}`;
-  document.getElementById('plan-amount-text').textContent = plan;
-  document.getElementById('upi-id-text').textContent  = OWNER_UPI_ID;
+  document.getElementById('m-title').textContent   = `Upgrade to Rs ${plan}`;
+  document.getElementById('m-amount').textContent  = `Rs ${plan}`;
+  document.getElementById('m-step-amt').textContent= `Rs ${plan}`;
+  document.getElementById('m-plan-num').textContent= plan;
+  document.getElementById('upi-id-text').textContent = UPI_ID;
   document.getElementById('modal').classList.add('open');
 }
-
-function closeModal() {
-  document.getElementById('modal').classList.remove('open');
+function closeModal(){ document.getElementById('modal').classList.remove('open'); }
+function copyUPI(){
+  navigator.clipboard.writeText(UPI_ID);
+  const b=document.getElementById('copy-btn');
+  b.textContent='Copied!'; b.classList.add('done');
+  setTimeout(()=>{b.textContent='Copy';b.classList.remove('done');},2000);
 }
-
-function copyUPI() {
-  navigator.clipboard.writeText(OWNER_UPI_ID);
-  const btn = document.getElementById('copy-btn');
-  btn.textContent = 'Copied!';
-  btn.classList.add('copied');
-  setTimeout(() => {
-    btn.textContent = 'Copy';
-    btn.classList.remove('copied');
-  }, 2000);
+function openWA(){
+  const p=document.getElementById('m-plan-num').textContent;
+  window.open(`https://wa.me/${WA_NUM}?text=${encodeURIComponent('Plan upgrade kiya Rs '+p)}`,'_blank');
 }
+document.getElementById('modal').addEventListener('click',function(e){if(e.target===this)closeModal();});
 
-function openWhatsApp() {
-  const plan = document.getElementById('plan-amount-text').textContent;
-  const msg  = encodeURIComponent(`Plan upgrade kiya Rs ${plan}`);
-  window.open(`https://wa.me/${MITTU_WHATSAPP.replace('+','')}?text=${msg}`, '_blank');
-}
-
-// Close modal on overlay click
-document.getElementById('modal').addEventListener('click', function(e) {
-  if (e.target === this) closeModal();
-});
-
-// ── INIT ──
-async function init() {
+async function init(){
   const shop = await loadShop();
-  if (!shop) {
-    document.getElementById('shop-name-display').textContent = 'Shop not found';
-    return;
-  }
-  await Promise.all([
-    loadOrders(shop.id),
-    loadStock(shop.id),
-    loadUdhaar(shop.id),
-    loadSales(shop.id),
-  ]);
+  if(!shop) return;
+  await Promise.all([loadOrders(),loadUdhaar(),loadReminders()]);
 }
-
 init();
-
-// Auto refresh every 30 seconds
-setInterval(init, 30000);
+setInterval(init,30000);
 </script>
 </body>
 </html>
