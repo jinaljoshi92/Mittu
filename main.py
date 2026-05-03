@@ -7,6 +7,8 @@ from supabase import create_client
 from dotenv import load_dotenv
 from datetime import date, datetime, timezone, timedelta
 from groq import Groq
+from flask import jsonify
+import hashlib
 
 load_dotenv()
 print("Mittu starting...", flush=True)
@@ -1035,6 +1037,86 @@ Return ONLY the JSON object:""",
         language, shop_name, shop_type
     )
 
+# ─────────────────────────────────────────
+# DASHBOARD API ENDPOINTS
+# Dashboard calls these instead of Supabase directly
+# ─────────────────────────────────────────
+def verify_phone(phone):
+    """Simple check — phone must exist in shops table"""
+    result = db.table("shops").select("id")\
+        .eq("phone", phone).execute()
+    return bool(result.data)
+
+@app.route("/api/shop", methods=["GET"])
+def api_shop():
+    phone = request.args.get("phone", "")
+    if not phone or not verify_phone(phone):
+        return jsonify({"error": "not found"}), 404
+    result = db.table("shops").select("*")\
+        .eq("phone", phone).execute()
+    if not result.data:
+        return jsonify({"error": "not found"}), 404
+    shop = result.data[0]
+    # Only return safe fields — never return internal IDs to browser
+    return jsonify({
+        "id":         shop["id"],
+        "name":       shop.get("name", ""),
+        "plan":       shop.get("plan", "free"),
+        "shop_type":  shop.get("shop_type", "general"),
+        "owner_name": shop.get("owner_name", ""),
+        "language":   shop.get("language", "hindi"),
+    })
+
+@app.route("/api/orders", methods=["GET"])
+def api_orders():
+    phone     = request.args.get("phone", "")
+    date_from = request.args.get("from", date.today().isoformat())
+    if not phone or not verify_phone(phone):
+        return jsonify([]), 200
+    shop = db.table("shops").select("id")\
+        .eq("phone", phone).execute()
+    if not shop.data:
+        return jsonify([]), 200
+    shop_id = shop.data[0]["id"]
+    orders  = db.table("orders").select("*")\
+        .eq("shop_id", shop_id)\
+        .gte("created_at", date_from)\
+        .order("created_at", desc=True)\
+        .execute()
+    return jsonify(orders.data)
+
+@app.route("/api/udhaar", methods=["GET"])
+def api_udhaar():
+    phone = request.args.get("phone", "")
+    if not phone or not verify_phone(phone):
+        return jsonify([]), 200
+    shop = db.table("shops").select("id")\
+        .eq("phone", phone).execute()
+    if not shop.data:
+        return jsonify([]), 200
+    shop_id = shop.data[0]["id"]
+    udhaar  = db.table("udhaar").select("*")\
+        .eq("shop_id", shop_id)\
+        .eq("status", "pending")\
+        .order("created_at", desc=True)\
+        .execute()
+    return jsonify(udhaar.data)
+
+@app.route("/api/reminders", methods=["GET"])
+def api_reminders():
+    phone = request.args.get("phone", "")
+    if not phone or not verify_phone(phone):
+        return jsonify([]), 200
+    shop = db.table("shops").select("id")\
+        .eq("phone", phone).execute()
+    if not shop.data:
+        return jsonify([]), 200
+    shop_id   = shop.data[0]["id"]
+    reminders = db.table("reminders").select("*")\
+        .eq("shop_id", shop_id)\
+        .order("remind_at", desc=False)\
+        .execute()
+    return jsonify(reminders.data)
 
 # ─────────────────────────────────────────
 # MAIN WEBHOOK — ORCHESTRATOR
