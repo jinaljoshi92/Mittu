@@ -1,0 +1,29 @@
+name: Mittu Reminder Worker
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'  # every 15 minutes
+  workflow_dispatch:          # also allows manual run
+
+jobs:
+  send-reminders:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install supabase python-dotenv twilio requests
+
+      - name: Run reminder worker
+        env:
+          SUPABASE_URL:  ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:  ${{ secrets.SUPABASE_KEY }}
+          TWILIO_SID:    ${{ secrets.TWILIO_SID }}
+          TWILIO_TOKEN:  ${{ secrets.TWILIO_TOKEN }}
+          TWILIO_NUMBER: ${{ secrets.TWILIO_NUMBER }}
+        run: python reminder_worker.py
